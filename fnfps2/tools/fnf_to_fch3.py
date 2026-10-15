@@ -52,15 +52,38 @@ SECTION_STEPS = 16          # FNF chart editor section length
 DEFAULT_DIFFICULTY = "normal"
 
 # FNF song event -> port FCH3 event type id.
-# Integration decision (plan 4.4): the port's event registry assigns these ids;
-# FocusCamera is the only event the legacy importer synthesises automatically.
+#
+# These ids are NOT free to choose: they are the ones the PS2 loader already
+# switches on. funkin/src/main.c, in the ui_state==8 event pump:
+#   type 1 -> g_tut_cam_focus = (value != 0)
+#   type 2 -> g_tut_zoom_to  = (value & 0xFFFF) / 1000
+#   type 4 -> g_tut_scroll_to = (value & 0xFFFF) / 1000
+# The earlier table had ChangeCharacter on 2 and AltIdleAnimation on 4, and no
+# ZoomCamera or ScrollSpeed at all -- so converting a real v2 chart produced an
+# UNKNOWN event where the port expected the zoom, and the camera simply never
+# moved. Fixed to match the loader.
 EVENT_TYPES = {
     "FocusCamera": 1,
-    "ChangeCharacter": 2,
+    "ZoomCamera": 2,
     "PlayAnimation": 3,
-    "AltIdleAnimation": 4,
+    "ScrollSpeed": 4,
+    "ChangeCharacter": 5,
+    "AltIdleAnimation": 6,
 }
 EVENT_TYPE_UNKNOWN = 0xFFFF
+
+# FCH3 packs an event's parameter in one u32: the fixed-point value in the low
+# 16 bits and the duration (in chart steps) in the high 16. The loader reads
+# only the low half today, so the high half is spare room that costs nothing
+# and lets the port honour per-song durations later.
+FIXED_SCALE = 1000          # zoom/scroll are stored x1000, as main.c expects
+
+
+def pack_event_value(fixed_value, duration_steps=0):
+    """(fixed_value, duration_steps) -> the u32 the loader decodes."""
+    v = int(round(fixed_value)) & 0xFFFF
+    d = int(round(duration_steps)) & 0xFFFF
+    return (d << 16) | v
 
 MAGIC = b"FCH3"
 VERSION = 3
@@ -179,12 +202,22 @@ def _legacy_sections(song):
 
 
 def _legacy_events(song):
-    """Legacy event rows are [name, strumTime, value1, value2]."""
+    """Legacy event rows are [name, strumTime, value1, value2].
+
+    Returns the same shape as _v2_events -- (time_ms, name, packed_u32) -- so
+    build_fch3 does not care which format it came from.
+    """
     out = []
     for e in song.get("events", []) or []:
         if len(e) < 2:
             continue
-        out.append((float(e[1]), str(e[0]), list(e[2:])))
+        packed = 0
+        for i, x in enumerate(list(e[2:])[:2]):
+            try:
+                packed |= (int(x) & 0xFFFF) << (16 * i)
+            except (TypeError, ValueError):
+                pass
+        out.append((float(e[1]), str(e[0]), packed))
     return out
 
 
@@ -212,13 +245,57 @@ def _v2_time_changes(metadata):
     return changes or [(0.0, DEFAULT_BPM)]
 
 
-def _v2_events(chart):
+def _v2_events(chart, scroll_speed=1.0):
+    """v2 events carry a dict of named parameters, not a positional list:
+       {"t":9600, "e":"ZoomCamera", "v":{"duration":4,"ease":"elasticInOut",
+        "zoom":1.3}}
+    Returns [(time_ms, name, packed_u32)] so build_fch3 stays format-agnostic.
+
+    scroll_speed is the difficulty's chart scrollSpeed, needed because
+    ScrollSpeedEvent honours "absolute": when false the target is
+    scroll * chart.scrollSpeed, not scroll.
+    """
     out = []
     for e in chart.get("events", []) or []:
         t = float(e.get("t", e.get("time", 0.0)))
         name = e.get("e", e.get("event", ""))
-        values = e.get("v", e.get("values", [])) or []
-        out.append((t, name, values))
+        v = e.get("v", e.get("values", {})) or {}
+
+        if isinstance(v, dict):
+            dur = v.get("duration", 0) or 0
+            if name == "FocusCamera":
+                # FocusCameraSongEvent.hx: char 0 = BF, 1 = opponent.
+                packed = pack_event_value(v.get("char", 0) or 0)
+            elif name == "ZoomCamera":
+                # ZoomCameraSongEvent.hx DEFAULT_MODE is 'direct', and the
+                # charts carry no "mode", so targetZoom = zoom *
+                # FlxCamera.defaultZoom (= 1.0). The port does NOT fold in the
+                # stage's cameraZoom; main.c documents this and it is proven
+                # on hardware.
+                packed = pack_event_value((v.get("zoom", 1.0) or 1.0) * FIXED_SCALE, dur)
+            elif name == "ScrollSpeed":
+                # ScrollSpeedEvent.hx: absolute false -> scroll * chart.scrollSpeed.
+                scroll = v.get("scroll", 1.0)
+                scroll = 1.0 if scroll is None else float(scroll)
+                if not v.get("absolute", False):
+                    scroll = scroll * scroll_speed
+                packed = pack_event_value(scroll * FIXED_SCALE, dur)
+            elif name == "PlayAnimation":
+                # The port drives the sing animations off note hits, not off
+                # this event, so only the id is needed. Still emitted so the
+                # event stream stays complete and telemetry can see it.
+                packed = 0
+            else:
+                packed = 0
+        else:
+            # legacy positional form [v1, v2, ...]
+            packed = 0
+            for i, x in enumerate(list(v)[:2]):
+                try:
+                    packed |= (int(x) & 0xFFFF) << (16 * i)
+                except (TypeError, ValueError):
+                    pass
+        out.append((t, name, packed))
     return out
 
 
@@ -289,15 +366,9 @@ def build_fch3(notes_ms, time_changes, events, sections_ms=None,
 
     # ---- events ------------------------------------------------------------
     evs = []
-    for t, name, values in events:
+    for t, name, value in events:
         etype = EVENT_TYPES.get(name, EVENT_TYPE_UNKNOWN)
-        value = 0
-        for i, v in enumerate(values[:2]):
-            try:
-                value |= (int(v) & 0xFFFF) << (16 * i)
-            except (TypeError, ValueError):
-                pass
-        evs.append((timeline.sample_at_ms(t), etype, value))
+        evs.append((timeline.sample_at_ms(t), etype, int(value) & 0xFFFFFFFF))
     evs.sort(key=lambda e: e[0])
 
     # ---- song end ----------------------------------------------------------
@@ -313,12 +384,16 @@ def build_fch3(notes_ms, time_changes, events, sections_ms=None,
 
     # ---- serialise ---------------------------------------------------------
     payload = bytearray()
-    for s, d, lane, mp in notes:
-        payload += struct.pack("<IIBBH", s, d, lane, mp, 0)
+    # Every record's trailing `order` field must equal its index. The loader
+    # enforces this as a corruption check (tutorial_chart.c returns -9 for
+    # notes, -12 for sections, -14 for events), so writing 0 here produced
+    # files the PS2 rejected. Only the real loader catches this.
+    for i, (s, d, lane, mp) in enumerate(notes):
+        payload += struct.pack("<IIBBH", s, d, lane, mp, i)
     for st, ss, sps, bpm in bpms:
         payload += struct.pack("<IIII", st, ss, sps, bpm)
-    for st, mh, ln in sections:
-        payload += struct.pack("<IBBH", st, mh, ln, 0)
+    for i, (st, mh, ln) in enumerate(sections):
+        payload += struct.pack("<IBBH", st, mh, ln, i)
     for i, (s, etype, value) in enumerate(evs):
         payload += struct.pack("<IIII", s, etype, value, i)
 
@@ -346,6 +421,21 @@ def convert_legacy(path, difficulty):
         sections_ms=_legacy_sections(song))
 
 
+def _v2_scroll_speed(chart, difficulty):
+    """chart["scrollSpeed"] is a per-difficulty map; 1.0 when absent."""
+    ss = chart.get("scrollSpeed") or {}
+    if not isinstance(ss, dict):
+        return 1.0
+    v = ss.get(difficulty)
+    if v is None:
+        # fall back to the first entry rather than to a guess
+        v = next(iter(ss.values()), 1.0)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 1.0
+
+
 def convert_v2(metadata_path, chart_path, difficulty):
     with open(metadata_path, encoding="utf-8") as f:
         meta = json.load(f)
@@ -354,7 +444,7 @@ def convert_v2(metadata_path, chart_path, difficulty):
     return build_fch3(
         _v2_notes(chart, difficulty),
         _v2_time_changes(meta),
-        _v2_events(chart))
+        _v2_events(chart, _v2_scroll_speed(chart, difficulty)))
 
 
 # ----------------------------------------------------------------------------
@@ -404,10 +494,18 @@ def selftest():
     assert len(notes) == 5, info
     for i, n in enumerate(notes):
         assert n[2] <= 3 and n[3] <= 1
-        assert n[4] == 0
+        # The loader rejects the whole file unless each record's order field
+        # equals its index (tutorial_chart.c: -9 for notes, -12 sections,
+        # -14 events). Writing 0 here is what made the PS2 refuse every
+        # converted chart, and only the real loader catches it.
+        assert n[4] == i, (i, n)
         if i:
             assert n[0] >= notes[i - 1][0]      # sorted by sample
         assert n[0] <= end and n[0] + n[1] <= end
+    for i, sec in enumerate(secs):
+        assert sec[3] == i, (i, sec)
+    for i, ev in enumerate(evs):
+        assert ev[3] == i, (i, ev)
     assert bpms[0][0] == 0 and bpms[0][1] == 0 and bpms[0][3] == 120
     assert bpms[0][2] == 6000                   # samples per step at 120 BPM
     # BPM change at 4000 ms: step 4000/125 = 32, sample 4000*48 = 192000,

@@ -8,7 +8,9 @@ cd "$(dirname "$0")/.."
 CC=${CC:-gcc}
 # -Isrc is needed because song_registry.c includes bs_dados.h from src/, and
 # -Isrc/engine because it includes its own header and the generated data.
-FLAGS="-O2 -Wall -Wextra -Werror -std=gnu11 -Isrc -Isrc/engine"
+# -Itest/ps2sdk-shim supplies the u8/u16/u32 typedefs the chart loader takes
+# from tamtypes.h, so the loader can be tested unmodified on the PC.
+FLAGS="-O2 -Wall -Wextra -Werror -std=gnu11 -Isrc -Isrc/engine -Itest/ps2sdk-shim"
 
 echo "== vram_cache + io_fila =="
 $CC $FLAGS test/test_engine.c src/engine/vram_cache.c src/engine/io_fila.c -o /tmp/fnf_test_engine
@@ -29,6 +31,25 @@ echo
 
 echo "== chart converter =="
 python3 tools/fnf_to_fch3.py --selftest
+echo
+
+# The converter's own selftest uses synthetic charts, which is how the two bugs
+# below survived for so long. This converts a REAL chart and loads it with the
+# REAL loader, so the two halves of the pipeline are checked against each other.
+echo "== real chart -> FCH3 -> real loader =="
+for diff in easy normal hard; do
+    python3 tools/fnf_to_fch3.py \
+        --metadata assets-data/songs/tutorial-metadata.json \
+        --chart assets-data/charts/tutorial-chart.json \
+        --difficulty "$diff" -o "/tmp/tutorial-$diff.chart" >/dev/null
+    # the expected note count comes from the JSON itself, not from the test
+    want=$(python3 -c "
+import json,sys
+d=json.load(open('assets-data/charts/tutorial-chart.json'))
+print(len(d['notes']['$diff']))")
+    printf '  %-7s ' "$diff:"
+    /tmp/fnf_test_real_chart "/tmp/tutorial-$diff.chart" "$want" | tail -1
+done
 echo
 
 echo "ALL SUITES PASSED"

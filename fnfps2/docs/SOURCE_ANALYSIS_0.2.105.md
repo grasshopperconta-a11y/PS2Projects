@@ -366,3 +366,102 @@ so that reduces to the usual three.
 
 Only `weekend1` differs in background (`#413CAE`); the rest are `#F9CF51`.
 Only `sserafim` has a capsule (`SP. COLLAB 1`).
+
+## 7. Real chart conversion, and the two bugs only real data found (2026-10-15)
+
+The converter had only ever been run on charts I wrote myself, which is exactly
+why two defects survived in it. Converting `tutorial-chart.json` -- the real
+file from the installed game -- broke immediately, and then again, and the
+second break was found by the port's own loader rather than by me.
+
+### 7.1 The v2 chart format, as it actually is
+
+```json
+{
+  "version": "2.0.0",
+  "scrollSpeed": {"easy": 1, "normal": 1, "hard": 1},
+  "notes": { "easy": [...], "normal": [...], "hard": [...] },
+  "events": [ {"t": 9600, "e": "FocusCamera", "v": {"char": 1}}, ... ]
+}
+```
+
+Three things I had wrong:
+
+- **`notes` is a map keyed by difficulty**, not a flat list. The keys are
+  `easy`/`normal`/`hard`.
+- **A note is `{t, d, l}`** where `t` is milliseconds, `d` is the strumline
+  index and `l` is the sustain. `SongNoteDataRaw` documents `d` as
+  `0=left, 1=down, 2=up, 3=right` with
+  `floor(d / strumlineSize)` selecting the strumline -- 0 = player,
+  1 = opponent. So with a strumline of 4, `d` 0-3 are the player's and 4-7 the
+  opponent's. The Tutorial's opponent (the GF) sings `d` 4 and 7.
+- **`events` carry a dict of named parameters**, not the legacy positional
+  `[name, t, v1, v2]`:
+  `{"t":9600,"e":"ZoomCamera","v":{"duration":4,"ease":"elasticInOut","zoom":1.3}}`.
+
+There is no `sections` list and no top-level `bpm`: the bpm comes from the
+metadata's `timeChanges`, and sections are derived.
+
+### 7.2 Bug 1 -- the event type ids did not match the loader
+
+The converter's table was:
+
+```python
+"FocusCamera": 1, "ChangeCharacter": 2, "PlayAnimation": 3, "AltIdleAnimation": 4
+```
+
+But `main.c` switches on:
+
+| id | meaning |
+|---|---|
+| 1 | FocusCamera -- `g_tut_cam_focus = (value != 0)` |
+| 2 | **ZoomCamera** -- `g_tut_zoom_to = (value & 0xFFFF) / 1000` |
+| 3 | PlayAnimation |
+| 4 | **ScrollSpeed** -- `g_tut_scroll_to = (value & 0xFFFF) / 1000` |
+
+There was no mapping for `ZoomCamera` or `ScrollSpeed` at all, so both became
+`EVENT_TYPE_UNKNOWN` and the port silently ignored them: the camera would never
+zoom and the scroll speed would never change. `ChangeCharacter` and
+`AltIdleAnimation` moved to 5 and 6.
+
+The parameter encoding follows the loader: the fixed-point value in the low 16
+bits (zoom/scroll x1000), and the event's `duration` in steps in the high 16.
+The loader reads only the low half today, so the high half is free.
+
+`ScrollSpeedEvent` honours `absolute`: when false the target is
+`scroll * chart.scrollSpeed[difficulty]`. The Tutorial's event is
+`{absolute:false, scroll:1.2}` against a chart scrollSpeed of 1.0, so the target
+is 1.2 -- which is what `main.c` hardcodes and what the converted chart now
+carries.
+
+### 7.3 Bug 2 -- `order` was written as 0
+
+`build_fch3` serialised every note, section and event with `order = 0`. The
+loader enforces `order == index` as a corruption check and returns **-9** for a
+bad note, -12 for a bad section, -14 for a bad event. Every chart the converter
+produced was therefore rejected by the PS2.
+
+This is the failure mode worth remembering: the converter's own selftest passed,
+because it asserted `n[4] == 0` -- it encoded the bug as the expected result.
+The real loader, not the converter, was the only thing that could catch it, and
+the selftest now asserts `order == i` instead.
+
+### 7.4 The end-to-end test
+
+`test/test_real_chart.c` compiles the port's actual loader on the PC against
+`test/ps2sdk-shim/tamtypes.h` (the loader is otherwise pure POSIX C; only the
+`u8/u16/u32` typedefs come from ps2sdk). `run_tests.sh` converts the real
+Tutorial chart at all three difficulties and loads each one:
+
+```
+== real chart -> FCH3 -> real loader ==
+  easy:   ALL PASS (0 failures)
+  normal: ALL PASS (0 failures)
+  hard:   ALL PASS (0 failures)
+```
+
+Verified on the real Tutorial chart, hard: 71 notes, 1 bpm change (100 bpm,
+7200 samples/step), 27 derived sections, 26 events
+(11 FocusCamera, 10 ZoomCamera, 4 PlayAnimation, 1 ScrollSpeed), first note the
+opponent's left at sample 460800 (9600 ms at 48 kHz), first zoom target 1.3,
+scroll target 1.2.
