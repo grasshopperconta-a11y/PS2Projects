@@ -177,3 +177,37 @@ packages below implement.
    streaming music is not starved by the (large) pack uploads.
 6. **Fix the three carried defects** already logged: level-name alpha 0.7,
    runtime `LEVEL SCORE` label, SongRegistry data flow.
+
+## Engine validation on the PC (2026-10-15)
+
+`fnfps2/test/test_engine.c` builds with the host compiler and passes:
+
+```
+gcc -O2 -Wall -Wextra -std=gnu11 -Isrc/engine \
+    test/test_engine.c src/engine/vram_cache.c src/engine/io_fila.c -o test_engine
+```
+
+Proven about `vram_cache`: residency/hit-miss accounting; LRU eviction picks the
+least-recently-used and refreshing a key protects it; `vc_fixar` blocks are never
+evicted; a request larger than the whole region fails with `-1`; a region made
+entirely of pinned blocks cannot be evicted and correctly fails; and **no two
+simultaneously-live textures ever share VRAM under continuous eviction
+pressure** (24 requests totalling 1,228,800 B into a 1,048,576 B cache).
+
+Proven about `io_fila`: an audio request enqueued *after* a 64 KB background
+write is served first (priority works), the write then drains completely, and a
+failing disk surfaces a negative result to the caller.
+
+### The budget number the packer needs
+
+Worst scene `tankmanBattlefield` (3 characters + 10 animated props = 13 live
+textures) against the measured 1,900,544 B of texture VRAM:
+
+| layout | bytes | % of budget |
+|---|---:|---:|
+| naive — 3 stage layers (512×256×4) + 3 chars (320×307×2) + 10 props (256×256×4) | 4,783,744 | 252% |
+| packed — 1 stage layer + 3 chars + 10 props in 3 atlases of 4 (256×256×4) | **1,900,160** | **100%** |
+
+So the scene fits, but only with the three stage layers reduced to one and the
+ten props packed four-per-atlas. That is the packer's contract, and it is now a
+test rather than an estimate. (384 B of headroom — the packer must not pad.)
