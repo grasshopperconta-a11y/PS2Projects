@@ -1,52 +1,241 @@
 {
-  "_comment": "Where every runtime asset comes from, and which ones the port actually reads. The files are in Google Drive, not in the repository: they total ~65 MB of converted audio and textures, and the repo carries the code and the JSON the converters work from. `required` marks the sixteen assets main.c opens at runtime -- until those are on the memory card the ELF builds but does not get past its first asset read. Each `drive_id` is a file in the folder 1XEb6Q9tRfOZU5iGjnXfYyxFzpCicYfD3, which is assets/assets inside https://drive.google.com/drive/folders/1VogcuoLAkBKI0QVra2maZ0lxtNo5h5SQ. `bytes` is the size the Drive listing reports, so a download can be checked without opening the file.",
+  "_comment": "Where every runtime asset comes from, and which ones the port actually reads. The files are in Google Drive, not in the repository: they total ~65 MB of converted audio and textures, and the repo carries the code and the JSON the converters work from. `required` marks the files the build and the port cannot proceed without: the sixteen main.c opens at runtime, plus the four .lz4f packs that title_packs.S and story_packs.S pull into the ELF with .incbin -- until those are on the memory card the ELF builds but does not get past its first asset read. Each `drive_id` is a file in the folder 1XEb6Q9tRfOZU5iGjnXfYyxFzpCicYfD3, which is assets/assets inside https://drive.google.com/drive/folders/1VogcuoLAkBKI0QVra2maZ0lxtNo5h5SQ. `bytes` is the size the Drive listing reports, so a download can be checked without opening the file.",
   "drive_folder": "1XEb6Q9tRfOZU5iGjnXfYyxFzpCicYfD3",
   "drive_folder_url": "https://drive.google.com/drive/folders/1VogcuoLAkBKI0QVra2maZ0lxtNo5h5SQ",
   "target_root": "assets",
   "assets": {
-    "bf_frames.lz4f": {"drive_id": "1P8pzNtraiZIuxGnzBMTiFt5L0uwUWE0Y", "bytes": 1239417, "required": true, "note": "the player's 43-frame pack, LZ4F"},
-    "gf_frames.lz4f": {"drive_id": "1SqlqVyHQ0SPVuFF5eG5KpVXMZ02wrMDx", "bytes": 1375989, "required": true, "note": "the opponent's 87-frame pack, LZ4F"},
-    "mainstage_tutorial_parallax.rgba": {"drive_id": "1ndZH5URr7yqi3oyTZHECYbCzpjTgY10j", "bytes": 524288, "required": true, "note": "512x256 ARGB32, the stage texture main.c draws into"},
-    "tutorial_hud_official_320x256_gsalpha.rgba": {"drive_id": "13-rlRsNrwoT_Ihz4uwqAEm3Ghmt7W982", "bytes": 327680, "required": true, "note": "320x307 GS alpha, uploaded as PSMCT16"},
-    "font.rgba": {"drive_id": "1r4QHQe1C4Cp42w20zQPHmHLBLRObmPYq", "bytes": 294912, "required": true, "note": "384x192 ARGB32, the font atlas"},
-    "font.widths": {"drive_id": "1R8SJGpmhqiRmQkvIxqBaYZanJqjBk4lf", "bytes": 96, "required": true, "note": "96 advance widths, one per printable ASCII glyph"},
-    "freakyMenu_48000.pcm": {"drive_id": "1syCfC4zAylAosKZajM1a9Dd5_Lxg0YLi", "bytes": 21687068, "required": true, "note": "the title music, s16le stereo 48 kHz"},
-    "menu_sfx.pcm": {"drive_id": "1n59yCHtO5nf107-hEiXtuM0qEyAj_Fg3", "bytes": 281088, "required": true},
-    "audio_stems.pcm": {"drive_id": "1eTX8GU-Gdd3OLlOQ-HQXZONuZn6V5Sg6", "bytes": 25804800, "required": true, "note": "the tutorial's instrumental and vocals"},
-    "menu_cache.rle": {"drive_id": "1p4gBOaOrUytU85MVt0VPwOEqip69OzWt", "bytes": 1623445, "required": true, "note": "the menu's pre-rendered frames, RLE"},
-    "title_alphabet.rgba": {"drive_id": "1ln2VQmm9sLfjbp_iI9L4LsM9dhymulQz", "bytes": 294912, "required": true},
-    "title_newgrounds.rgba": {"drive_id": "1-EQUR2ZLBsSB_e54hQODsTgz3mna3bCl", "bytes": 126700, "required": true},
-    "title_prompt_l.rgba": {"drive_id": "1k5606HaP61WAezVVd-KR77fxd-smkWAc", "bytes": 393216, "required": true},
-    "title_prompt_r.rgba": {"drive_id": "18TT_KUWzGAqOprKdIP6IWCLIBa3zChxY", "bytes": 245760, "required": true},
-    "title_logoBumpin.frames": {"drive_id": "1X_DYhiE51n1MLS6Ctn2E5O1EOmapSa-M", "bytes": 4608000, "required": true, "note": "320x240x4 x 15 frames"},
-    "title_gfDanceTitle.frames": {"drive_id": "19h3N3-66T0nIKJAIoFTKwdZoQAQCjdkA", "bytes": 7219200, "required": true, "note": "256x235x4 x 30 frames"},
-
-    "test.chart": {"drive_id": "1CoG30jwnSPLywcUhwBQm_expvg4S8uqz", "bytes": 1364, "required": false, "note": "the tutorial chart as it was last deployed; build.sh regenerates it from the JSON as FCH4, which is lossless where this one is not"},
-    "gameplay_hud.rgba": {"drive_id": "1-GYrysidY79BMINn-DCg1OljvafMFs__", "bytes": 327680, "required": false},
-    "mainstage.rgba": {"drive_id": "1rLaJ-Ktw1EMif3MkAZIC2N88ccnHVUOe", "bytes": 524288, "required": false},
-    "mainstage_tutorial.rgba": {"drive_id": "1OJvh2ZGSDDANZktxSLTTJI3yIPdnCAcU", "bytes": 524288, "required": false},
-    "mainstage_tutorial_composite.rgba": {"drive_id": "1Bj8pmRUr2Fb5iOt7p0Vsu30vrXYg1hmm", "bytes": 524288, "required": false},
-    "tutorial_notes.rgba": {"drive_id": "17UKyqWUxRTeWgAki_Gw8CBIc__egjWeD", "bytes": 51200, "required": false},
-    "tutorial_notes_52.rgba": {"drive_id": "182vYDBOYf1o49vSB3c9OO_H-7IxDcJ18", "bytes": 86528, "required": false},
-    "tutorial_notes_52_gsalpha.rgba": {"drive_id": "169Ma6tlJZGHB4MRVqrxlQC6ZlQxaB39K", "bytes": 86528, "required": false},
-    "tutorial_notes_official_56_gsalpha.rgba": {"drive_id": "1uzaHBjKzUsZqo3cShJOlIqi1A3q94jT-", "bytes": 100352, "required": false},
-    "receptors.rgba": {"drive_id": "1Yf1KVYP9pirSfeFD9FJ_tTQPlHBy8aYt", "bytes": 23040, "required": false},
-    "bf.frames": {"drive_id": "1RRiB7sMFk74Nn9dreEzABd5aJ87KPdae", "bytes": 11271504, "required": false, "note": "the uncompressed BF pack; bf_frames.lz4f is what the port reads"},
-    "gf.frames": {"drive_id": "1lqRYij2OriDMXbKM63YAwn9vB-uMZYS6", "bytes": 14194224, "required": false},
-    "death.frames": {"drive_id": "1lM_iLZ6EBDmfAApVvHJ_UxMLldujBv_v", "bytes": 9590112, "required": false},
-    "bf.anim": {"drive_id": "1j_DWZUt7pv1kIFG0F7p15ICkqhA667Rg", "bytes": 176, "required": false},
-    "gf.anim": {"drive_id": "1xChpwm5gTGWgwmi_5XMcsOpiJQ07DICi", "bytes": 176, "required": false},
-    "death.anim": {"drive_id": "1K1rGA9ZdYRfLhwrlx1kol1ILy77Ll8-t", "bytes": 112, "required": false},
-    "title_logoBumpin.lz4f": {"drive_id": "1laGn1LUlkG2cmaC9D6pXQ10zyfjrd8yR", "bytes": 658996, "required": false, "note": "also embedded in the ELF via .incbin, so this copy is spare"},
-    "title_gfDanceTitle.lz4f": {"drive_id": "12pZYkDFYleiaaQ_rUqP9SMEETMlqhATI", "bytes": 1549455, "required": false},
-    "story_bf_idle.lz4f": {"drive_id": "13kyt_65AAdVsXphLq_JrDyBZqs_uvPo5", "bytes": 238038, "required": false},
-    "story_gf_idle.lz4f": {"drive_id": "1wdjJx-4ku1cswAXTc4dqD0TEHhObxfGH", "bytes": 483303, "required": false},
-    "gameOver.pcm": {"drive_id": "1U-tJAJ6y4mgI1i75SWHuEl0j-nsZ6RXn", "bytes": 3386880, "required": false},
-    "gameOverEnd.pcm": {"drive_id": "1-oE_CZTKqSRXE3DE1LoBW12JUEcumdEa", "bytes": 635904, "required": false},
-    "fnf_loss_sfx.pcm": {"drive_id": "1Xs7J6sRdhuL6L_QGvxyeeM34xXlRHHvH", "bytes": 360152, "required": false},
-    "freakyMenu.pcm": {"drive_id": "1SiuZdumm4OQCHE6eprR50PMniB8V4rUh", "bytes": 9962496, "required": false, "note": "a 24 kHz copy; the port reads the 48000 one"},
-    "tutorial_notes_52_preview.png": {"drive_id": "1SLb57zZ9q1J6x68f_RhZoqkHboyldVFO", "bytes": 23898, "required": false},
-    "mainstage_tutorial_composite_preview.png": {"drive_id": "1w4-L_m0anOeqDMoEicLcRajywoHL3mJ-", "bytes": 56661, "required": false},
-    "mainstage_tutorial_composite_preview_512.png": {"drive_id": "18e6UqzXJE9aK-Jyx-KXrYroNlwNA21qA", "bytes": 43988, "required": false}
+    "bf_frames.lz4f": {
+      "drive_id": "1P8pzNtraiZIuxGnzBMTiFt5L0uwUWE0Y",
+      "bytes": 1239417,
+      "required": true,
+      "note": "the player's 43-frame pack, LZ4F"
+    },
+    "gf_frames.lz4f": {
+      "drive_id": "1SqlqVyHQ0SPVuFF5eG5KpVXMZ02wrMDx",
+      "bytes": 1375989,
+      "required": true,
+      "note": "the opponent's 87-frame pack, LZ4F"
+    },
+    "mainstage_tutorial_parallax.rgba": {
+      "drive_id": "1ndZH5URr7yqi3oyTZHECYbCzpjTgY10j",
+      "bytes": 524288,
+      "required": true,
+      "note": "512x256 ARGB32, the stage texture main.c draws into"
+    },
+    "tutorial_hud_official_320x256_gsalpha.rgba": {
+      "drive_id": "13-rlRsNrwoT_Ihz4uwqAEm3Ghmt7W982",
+      "bytes": 327680,
+      "required": true,
+      "note": "320x307 GS alpha, uploaded as PSMCT16"
+    },
+    "font.rgba": {
+      "drive_id": "1r4QHQe1C4Cp42w20zQPHmHLBLRObmPYq",
+      "bytes": 294912,
+      "required": true,
+      "note": "384x192 ARGB32, the font atlas"
+    },
+    "font.widths": {
+      "drive_id": "1R8SJGpmhqiRmQkvIxqBaYZanJqjBk4lf",
+      "bytes": 96,
+      "required": true,
+      "note": "96 advance widths, one per printable ASCII glyph"
+    },
+    "freakyMenu_48000.pcm": {
+      "drive_id": "1syCfC4zAylAosKZajM1a9Dd5_Lxg0YLi",
+      "bytes": 21687068,
+      "required": true,
+      "note": "the title music, s16le stereo 48 kHz"
+    },
+    "menu_sfx.pcm": {
+      "drive_id": "1n59yCHtO5nf107-hEiXtuM0qEyAj_Fg3",
+      "bytes": 281088,
+      "required": true
+    },
+    "audio_stems.pcm": {
+      "drive_id": "1eTX8GU-Gdd3OLlOQ-HQXZONuZn6V5Sg6",
+      "bytes": 25804800,
+      "required": true,
+      "note": "the tutorial's instrumental and vocals"
+    },
+    "menu_cache.rle": {
+      "drive_id": "1p4gBOaOrUytU85MVt0VPwOEqip69OzWt",
+      "bytes": 1623445,
+      "required": true,
+      "note": "the menu's pre-rendered frames, RLE"
+    },
+    "title_alphabet.rgba": {
+      "drive_id": "1ln2VQmm9sLfjbp_iI9L4LsM9dhymulQz",
+      "bytes": 294912,
+      "required": true
+    },
+    "title_newgrounds.rgba": {
+      "drive_id": "1-EQUR2ZLBsSB_e54hQODsTgz3mna3bCl",
+      "bytes": 126700,
+      "required": true
+    },
+    "title_prompt_l.rgba": {
+      "drive_id": "1k5606HaP61WAezVVd-KR77fxd-smkWAc",
+      "bytes": 393216,
+      "required": true
+    },
+    "title_prompt_r.rgba": {
+      "drive_id": "18TT_KUWzGAqOprKdIP6IWCLIBa3zChxY",
+      "bytes": 245760,
+      "required": true
+    },
+    "title_logoBumpin.frames": {
+      "drive_id": "1X_DYhiE51n1MLS6Ctn2E5O1EOmapSa-M",
+      "bytes": 4608000,
+      "required": true,
+      "note": "320x240x4 x 15 frames"
+    },
+    "title_gfDanceTitle.frames": {
+      "drive_id": "19h3N3-66T0nIKJAIoFTKwdZoQAQCjdkA",
+      "bytes": 7219200,
+      "required": true,
+      "note": "256x235x4 x 30 frames"
+    },
+    "test.chart": {
+      "drive_id": "1CoG30jwnSPLywcUhwBQm_expvg4S8uqz",
+      "bytes": 1364,
+      "required": false,
+      "note": "the tutorial chart as it was last deployed; build.sh regenerates it from the JSON as FCH4, which is lossless where this one is not"
+    },
+    "gameplay_hud.rgba": {
+      "drive_id": "1-GYrysidY79BMINn-DCg1OljvafMFs__",
+      "bytes": 327680,
+      "required": false
+    },
+    "mainstage.rgba": {
+      "drive_id": "1rLaJ-Ktw1EMif3MkAZIC2N88ccnHVUOe",
+      "bytes": 524288,
+      "required": false
+    },
+    "mainstage_tutorial.rgba": {
+      "drive_id": "1OJvh2ZGSDDANZktxSLTTJI3yIPdnCAcU",
+      "bytes": 524288,
+      "required": false
+    },
+    "mainstage_tutorial_composite.rgba": {
+      "drive_id": "1Bj8pmRUr2Fb5iOt7p0Vsu30vrXYg1hmm",
+      "bytes": 524288,
+      "required": false
+    },
+    "tutorial_notes.rgba": {
+      "drive_id": "17UKyqWUxRTeWgAki_Gw8CBIc__egjWeD",
+      "bytes": 51200,
+      "required": false
+    },
+    "tutorial_notes_52.rgba": {
+      "drive_id": "182vYDBOYf1o49vSB3c9OO_H-7IxDcJ18",
+      "bytes": 86528,
+      "required": false
+    },
+    "tutorial_notes_52_gsalpha.rgba": {
+      "drive_id": "169Ma6tlJZGHB4MRVqrxlQC6ZlQxaB39K",
+      "bytes": 86528,
+      "required": false
+    },
+    "tutorial_notes_official_56_gsalpha.rgba": {
+      "drive_id": "1uzaHBjKzUsZqo3cShJOlIqi1A3q94jT-",
+      "bytes": 100352,
+      "required": false
+    },
+    "receptors.rgba": {
+      "drive_id": "1Yf1KVYP9pirSfeFD9FJ_tTQPlHBy8aYt",
+      "bytes": 23040,
+      "required": false
+    },
+    "bf.frames": {
+      "drive_id": "1RRiB7sMFk74Nn9dreEzABd5aJ87KPdae",
+      "bytes": 11271504,
+      "required": false,
+      "note": "the uncompressed BF pack; bf_frames.lz4f is what the port reads"
+    },
+    "gf.frames": {
+      "drive_id": "1lqRYij2OriDMXbKM63YAwn9vB-uMZYS6",
+      "bytes": 14194224,
+      "required": false
+    },
+    "death.frames": {
+      "drive_id": "1lM_iLZ6EBDmfAApVvHJ_UxMLldujBv_v",
+      "bytes": 9590112,
+      "required": false
+    },
+    "bf.anim": {
+      "drive_id": "1j_DWZUt7pv1kIFG0F7p15ICkqhA667Rg",
+      "bytes": 176,
+      "required": false
+    },
+    "gf.anim": {
+      "drive_id": "1xChpwm5gTGWgwmi_5XMcsOpiJQ07DICi",
+      "bytes": 176,
+      "required": false
+    },
+    "death.anim": {
+      "drive_id": "1K1rGA9ZdYRfLhwrlx1kol1ILy77Ll8-t",
+      "bytes": 112,
+      "required": false
+    },
+    "title_logoBumpin.lz4f": {
+      "drive_id": "1laGn1LUlkG2cmaC9D6pXQ10zyfjrd8yR",
+      "bytes": 658996,
+      "required": true,
+      "note": "build input: .incbin by title_packs.S, 15 frames of 320x240"
+    },
+    "title_gfDanceTitle.lz4f": {
+      "drive_id": "12pZYkDFYleiaaQ_rUqP9SMEETMlqhATI",
+      "bytes": 1549455,
+      "required": true,
+      "note": "build input: .incbin by title_packs.S, 30 frames of 256x235"
+    },
+    "story_bf_idle.lz4f": {
+      "drive_id": "13kyt_65AAdVsXphLq_JrDyBZqs_uvPo5",
+      "bytes": 238038,
+      "required": true,
+      "note": "build input: .incbin by story_packs.S"
+    },
+    "story_gf_idle.lz4f": {
+      "drive_id": "1wdjJx-4ku1cswAXTc4dqD0TEHhObxfGH",
+      "bytes": 483303,
+      "required": true,
+      "note": "build input: .incbin by story_packs.S"
+    },
+    "gameOver.pcm": {
+      "drive_id": "1U-tJAJ6y4mgI1i75SWHuEl0j-nsZ6RXn",
+      "bytes": 3386880,
+      "required": false
+    },
+    "gameOverEnd.pcm": {
+      "drive_id": "1-oE_CZTKqSRXE3DE1LoBW12JUEcumdEa",
+      "bytes": 635904,
+      "required": false
+    },
+    "fnf_loss_sfx.pcm": {
+      "drive_id": "1Xs7J6sRdhuL6L_QGvxyeeM34xXlRHHvH",
+      "bytes": 360152,
+      "required": false
+    },
+    "freakyMenu.pcm": {
+      "drive_id": "1SiuZdumm4OQCHE6eprR50PMniB8V4rUh",
+      "bytes": 9962496,
+      "required": false,
+      "note": "a 24 kHz copy; the port reads the 48000 one"
+    },
+    "tutorial_notes_52_preview.png": {
+      "drive_id": "1SLb57zZ9q1J6x68f_RhZoqkHboyldVFO",
+      "bytes": 23898,
+      "required": false
+    },
+    "mainstage_tutorial_composite_preview.png": {
+      "drive_id": "1w4-L_m0anOeqDMoEicLcRajywoHL3mJ-",
+      "bytes": 56661,
+      "required": false
+    },
+    "mainstage_tutorial_composite_preview_512.png": {
+      "drive_id": "18e6UqzXJE9aK-Jyx-KXrYroNlwNA21qA",
+      "bytes": 43988,
+      "required": false
+    }
   }
 }

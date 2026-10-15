@@ -14,3 +14,23 @@ compara o tamanho byte a byte, então um download pela metade é pego.
 
 A lista completa, com o id no Drive e o tamanho de cada arquivo, está em
 assets-manifest.json na raiz do projeto.
+
+
+----------------------------------------------------------------------------
+OS 4 ARQUIVOS .lz4f QUE JÁ ESTÃO AQUI NÃO SÃO SEUS
+----------------------------------------------------------------------------
+
+    title_logoBumpin.lz4f      658996
+    title_gfDanceTitle.lz4f   1549455
+    story_gf_idle.lz4f         483303
+    story_bf_idle.lz4f         238038
+
+Esses quatro fazem parte do pacote e NÃO devem ser apagados. Eles não são
+asset de runtime: src/title_packs.S e src/story_packs.S os puxam para dentro
+do ELF com .incbin, então sem eles o link não acontece. Ficam versionados
+justamente por isso -- um build que depende de quatro arquivos soltos em uma
+pasta do Drive é um build que quebra sem avisar.
+
+Se você os apagou sem querer, o build agora para antes do make e diz o nome
+de cada arquivo que falta, em vez de morrer com um erro de make que não
+explica nada.

@@ -222,6 +222,47 @@ MSG
     N=$(nproc 2>/dev/null || echo 1)
     [ -n "$JOBS" ] && N="$JOBS"
 
+    # Everything the build needs that is not a .c file in src/. Checked here,
+    # before make, because a missing input does not look like a compile error:
+    # make says "No rule to make target 'src/title_packs.o'" and stops, which
+    # none of the error patterns below match, so the failure reached the user as
+    # an empty error section and a deleted log. That is how a build that was
+    # missing six source files reported nothing at all.
+    step "checking the build inputs"
+    MISSING=""
+    for o in $(sed -n 's/^EE_OBJS *= *//p' Makefile); do
+        base=${o%.o}
+        found=0
+        for e in c s S; do
+            [ -f "$base.$e" ] && found=1
+        done
+        [ "$found" = 1 ] || MISSING="$MISSING $base.{c,s,S}"
+    done
+    # The .S files pull texture packs straight into the ELF with .incbin, so
+    # those binaries are build inputs too -- not runtime assets.
+    for s in src/*.S; do
+        [ -f "$s" ] || continue
+        for inc in $(sed -n 's/^[[:space:]]*\.incbin[[:space:]]*"\([^"]*\)".*/\1/p' "$s"); do
+            [ -f "$inc" ] || MISSING="$MISSING $inc"
+        done
+    done
+    if [ -n "$MISSING" ]; then
+        printf '\n' >&2
+        printf '  These files are needed to build, and are not in the package:\n' >&2
+        for m in $MISSING; do
+            printf '      %s\n' "$m" >&2
+        done
+        printf '\n' >&2
+        printf '  The .lz4f packs live in the same Drive folder as the runtime\n' >&2
+        printf '  assets. Run:   ./build.sh --check-assets\n' >&2
+        printf '  and it writes assets-faltando.html with one link per file.\n' >&2
+        printf '\n' >&2
+        printf '  The sources belong in the repository. If one is missing, the\n' >&2
+        printf '  checkout is incomplete -- say so and it gets put back.\n' >&2
+        exit 1
+    fi
+    ok "every source and .incbin input is present"
+
     # FNX_EXTRA is appended after -O2, so a trailing -O1 wins. This is the
     # Makefile's own extension point; overriding EE_CFLAGS on the command line
     # would discard the -D_EE that Makefile.pref composes and the build would
@@ -241,12 +282,21 @@ MSG
         printf '\n%s%s%s\n' "$C_RED" "build failed. The errors, and the lines around them:" "$C_OFF" >&2
         # error: lines first, then the few lines before each so the failing
         # source line is visible, then the last of the log for context.
-        grep -n -E 'error:|Error [0-9]|undefined reference|No such file|cannot find' build.log \
+        # "No rule to make target" is in the list on purpose: that is what a
+        # missing source file looks like, and it used to match nothing here.
+        grep -n -E 'error:|Error [0-9]|undefined reference|No such file|cannot find|No rule to make target' build.log \
             | head -40
-        printf '\n%s\n' "--- context ---"
-        grep -n -B2 -A2 -E 'error:' build.log | head -60
-        printf '\n%s\n' "--- full log: build.log ---"
-        rm -f build.log
+        printf '\n%s\n' "--- context ---" >&2
+        grep -n -B2 -A2 -E 'error:|No rule to make target' build.log | head -60 >&2
+        # If nothing above matched, the log is the only evidence there is, so
+        # show its tail rather than an empty section. An earlier version printed
+        # the headers and nothing else, which reads as "the build broke for no
+        # reason".
+        if ! grep -q -E 'error:|Error [0-9]|undefined reference|No such file|cannot find|No rule to make target' build.log; then
+            printf '\n%s\n' "--- no error line matched; the last 40 lines of the log ---" >&2
+            tail -40 build.log >&2
+        fi
+        printf '\n%s\n' "--- full log kept at build.log ---" >&2
         die "build failed"
     fi
     rm -f build.log
