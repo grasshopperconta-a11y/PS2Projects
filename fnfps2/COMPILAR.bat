@@ -188,7 +188,10 @@ REM  usebackq, aspas duplas significam "nome de arquivo", entao nao ha'
 REM  comando a interpretar -- e linhas em branco sao puladas sozinhas, o que
 REM  tambem resolve o caso de nao achar nada.
 set "FOUND="
-!WSLRUN! !WSLEX! sh "!WSLPATH!/tools/find_ps2dev.sh" > "%TEMP%\fnf-ps2dev.txt" 2>nul
+REM stderr fica de proposito: uma instalacao parcial (tem o compilador mas
+REM nao tem os makefiles do SDK) imprime o porque la', e essa mensagem vale
+REM mais que o silencio.
+!WSLRUN! !WSLEX! sh "!WSLPATH!/tools/find_ps2dev.sh" > "%TEMP%\fnf-ps2dev.txt"
 if exist "%TEMP%\fnf-ps2dev.txt" (
     for /f "usebackq tokens=*" %%P in ("%TEMP%\fnf-ps2dev.txt") do set "FOUND=%%P"
     del "%TEMP%\fnf-ps2dev.txt" >nul 2>&1

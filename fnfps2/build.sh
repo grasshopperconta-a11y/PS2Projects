@@ -81,20 +81,32 @@ die()  { printf '\n%s%s%s\n' "$C_RED" "$1" "$C_OFF" >&2; exit 1; }
 # Where the toolchain might live, in the order to try. The first is the one the
 # build has been reproduced with; the rest are the usual places an installer
 # puts it, so a fresh machine does not need an environment variable set.
+# Two layouts are real, and looking for only one of them reports a perfectly
+# good toolchain as missing:
+#
+#   old    $PS2DEV/bin/ee-gcc   -- wrapper scripts, the classic ps2dev
+#   new    $PS2DEV/ee/bin/mips64r5900el-ps2-elf-gcc
+#
+# The second is what ps2sdk's own Makefile.pref asks for -- EE_TOOL_PREFIX is
+# mips64r5900el-ps2-elf- and EE_CC is $(EE_TOOL_PREFIX)gcc -- so a tree with
+# that compiler and no ee-gcc wrapper is the current install, not a broken
+# one. It also wants ps2sdk/samples/Makefile.pref, because that is what the
+# project's Makefile includes.
 find_toolchain() {
     for d in \
         "${PS2DEV:-}" \
-        /var/tmp/ps2dev-root/ps2dev \
         /usr/local/ps2dev \
-        /opt/ps2dev \
         "$HOME/ps2dev" \
-        /usr/local/ps2sdk
+        /opt/ps2dev \
+        /usr/local/ps2sdk \
+        /var/tmp/ps2dev-root/ps2dev
     do
         [ -n "$d" ] || continue
         if [ -x "$d/bin/ee-gcc" ] || [ -x "$d/ee/bin/ee-gcc" ]; then
             printf '%s\n' "$d"; return 0
         fi
-        if [ -f "$d/ps2sdk/Makefile.pref" ] || [ -x "$d/ps2sdk/bin/ee-gcc" ]; then
+        if [ -x "$d/ee/bin/mips64r5900el-ps2-elf-gcc" ] \
+           && [ -f "$d/ps2sdk/samples/Makefile.pref" ]; then
             printf '%s\n' "$d"; return 0
         fi
     done
