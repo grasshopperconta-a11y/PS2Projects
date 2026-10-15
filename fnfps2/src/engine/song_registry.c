@@ -17,9 +17,14 @@
 
 /* tutorial — a musica que o port ja toca, com palco e personagens
    provados no hardware (official_tables.h). */
+/* CONFIRMADO em assets-data/songs/tutorial-metadata.json:
+   playData.characters = {player:"bf", opponent:"gf", opponentVocals:["gf"],
+   playerVocals:["bf"]} -- NAO ha campo "girlfriend". No Tutorial a GF e a
+   oponente, e o slot do meio fica vazio. (Confirma o comentario de
+   tutorial_notes_update em main.c: "no Tutorial a GF e a oponente".) */
 static const sr_song_t s_tutorial = {
-    "tutorial", "Tutorial", "Kawai Sprite", NULL,
-    "bf", "gf", "dad", "mainStage", "default",
+    "tutorial", "Tutorial", "Kawai Sprite", "ninjamuffin99 + MtH",
+    "bf", NULL, "gf", "mainStage", "funkin",
     SR_DIFF_ALL, 96, 1.0f, 0
 };
 
@@ -85,9 +90,11 @@ static const sr_song_t s_satin_panties = {
     "bf", "gf", "mom-car", "limoRide", "default",
     SR_DIFF_ALL, 96, 1.0f, 0
 };
+/* CONFIRMADO em assets-data/songs/milf-metadata.json: bf-car / gf-car /
+   mom-car, palco limoRide, bpm 180. */
 static const sr_song_t s_milf = {
-    "milf", "Milf", "Kawai Sprite", NULL,
-    "bf", "gf", "mom-car", "limoRide", "default",
+    "milf", "M.I.L.F", "Kawai Sprite", "ninjamuffin99 + MtH + Spazkid",
+    "bf-car", "gf-car", "mom-car", "limoRide", "funkin",
     SR_DIFF_ALL, 96, 1.0f, 0
 };
 
@@ -209,17 +216,19 @@ static const sr_level_t lv_weekend1 = {
     "weekend1", "DARNell", "weekend1", 0x9A5D9Bu,
     { &s_darnell, &s_lit_up, &s_2hot, &s_blazin }, 4, 1
 };
-/* sserafim — a decima semana. Os ids das 3 musicas vem dos assets
-   (funkin.assets @ 9300719), nao do fonte; o placeholder abaixo mantem a
-   semana visivel e contavel, e preencha quando rodar o Butterscotch. */
-static const sr_song_t s_sserafim_placeholder = {
-    "sserafim", "LE SSERAFIM", "LE SSERAFIM", NULL,
-    "sserafim-sakura", "sserafim-gf", "sserafim-kazuha", "sserafim", "default",
+/* sserafim — a decima semana. CONFIRMADO em assets-data/levels/sserafim.json:
+   "songs": ["spaghetti"]. Uma musica so, nao tres. Os personagens vem de
+   spaghetti-metadata.json, que ainda nao esta em maos; os props da semana
+   (sserafim.json) mostram spaghetti/bf/gf, entao o palco provavelmente e o
+   "sserafim" — a confirmar com o metadata. */
+static const sr_song_t s_spaghetti = {
+    "spaghetti", "Spaghetti", "LE SSERAFIM", NULL,
+    NULL, NULL, NULL, "sserafim", "funkin",
     SR_DIFF_ALL, 96, 1.0f, 0
 };
 static const sr_level_t lv_sserafim = {
-    "sserafim", "LE SSERAFIM", "sserafim", 0x2A2A2Au,
-    { &s_sserafim_placeholder }, 1, 1
+    "sserafim", "LE SSERAFIM", "sserafim", 0xF9CF51u,
+    { &s_spaghetti }, 1, 1
 };
 
 static const sr_level_t *const g_levels[] = {
@@ -328,6 +337,12 @@ static void default_report(const char *fmt, ...)
     putchar('\n');
 }
 
+/* Um personagem desconhecido (NULL) ainda nao tem metadata: falta o arquivo
+   assets/songs/<id>/<id>-metadata.json. Um id preenchido e ausente da tabela
+   oficial, esse sim, e erro de digitacao. As duas coisas sao reportadas de
+   forma diferente, porque pedem acoes diferentes. */
+#define SR_PENDING "PENDENTE: falta o metadata da musica"
+
 static int char_exists(const char *id)
 {
     unsigned int i;
@@ -351,9 +366,14 @@ static void check_song(void (*report)(const char *fmt, ...), const sr_song_t *s,
 {
     if (!s->id || !*s->id) { g_problems++; report("  [%s] musica sem id", level_id); }
     if (!s->name || !*s->name) { g_problems++; report("  [%s/%s] sem nome", level_id, s->id); }
-    if (!char_exists(s->player)) { g_problems++; report("  [%s/%s] player '%s' nao existe em bs_dados.h", level_id, s->id, s->player ? s->player : "(null)"); }
-    if (!char_exists(s->girlfriend)) { g_problems++; report("  [%s/%s] girlfriend '%s' nao existe em bs_dados.h", level_id, s->id, s->girlfriend ? s->girlfriend : "(null)"); }
-    if (!char_exists(s->opponent)) { g_problems++; report("  [%s/%s] opponent '%s' nao existe em bs_dados.h", level_id, s->id, s->opponent ? s->opponent : "(null)"); }
+    if (!s->player) { g_problems++; report("  [%s/%s] player: %s", level_id, s->id, SR_PENDING); }
+    else if (!char_exists(s->player)) { g_problems++; report("  [%s/%s] player '%s' nao existe em bs_dados.h", level_id, s->id, s->player); }
+    if (s->girlfriend && !char_exists(s->girlfriend)) {
+        g_problems++;
+        report("  [%s/%s] girlfriend '%s' nao existe em bs_dados.h", level_id, s->id, s->girlfriend);
+    }
+    if (!s->opponent) { g_problems++; report("  [%s/%s] opponent: %s", level_id, s->id, SR_PENDING); }
+    else if (!char_exists(s->opponent)) { g_problems++; report("  [%s/%s] opponent '%s' nao existe em bs_dados.h", level_id, s->id, s->opponent); }
     if (!stage_exists(s->stage)) { g_problems++; report("  [%s/%s] palco '%s' nao existe em bs_dados.h", level_id, s->id, s->stage ? s->stage : "(null)"); }
     if (!(s->difficulties & SR_DIFF_ALL)) { g_problems++; report("  [%s/%s] nenhuma dificuldade", level_id, s->id); }
     if (!(s->difficulties & SR_DIFF_NORMAL)) { g_problems++; report("  [%s/%s] sem 'normal' (a dificuldade padrao)", level_id, s->id); }
