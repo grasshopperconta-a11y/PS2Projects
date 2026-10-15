@@ -550,3 +550,94 @@ v4 with a wider event record (two value words, or a small parameter block).
 That is a format change to a container the port already loads on hardware, so
 it is a decision to take deliberately rather than something to slip in -- and
 it is the next real piece of work, not a footnote.
+
+## 9. The stage data: 3 errors in the recovered table (2026-10-15)
+
+All 21 stage JSONs came down from the same Drive folder as the songs.
+`tools/check_bs_dados.py` parses `bs_stages[]` and compares every field against
+them. The result was not clean:
+
+```
+bs_dados.h: 21 stages, JSON: 21 stages
+mismatches: 3 of 21
+```
+
+The three are all `*Erect` variants, and every one of them looks like a copy
+of the base stage that was hand-edited and got edited wrongly:
+
+| stage | field | bs_dados.h had | the game has |
+|---|---|---|---|
+| `schoolEvilErect` | gf position | `[724, 763]` | `[724, 823]` |
+| `spookyMansionErect` | cameraZoom | `1.25` | `1.0` |
+| `spookyMansionErect` | bf position | `[989.5, 885]` | `[1250, 885]` |
+| `tankmanBattlefieldErect` | gf position | `[660.5, 730]` | `[800.5, 775]` |
+
+`schoolEvilErect` had inherited `schoolEvil`'s gf y. `spookyMansionErect` had
+`mainStage`'s zoom *and* bf x. `tankmanBattlefieldErect` had inherited
+`tankmanBattlefield`'s gf. All four values are now corrected, and the checker
+runs in `run_tests.sh` so the table cannot silently drift again.
+
+The other 17 stages agree exactly, including every fractional position
+(`989.5`, `751.5`, `800.5`), so the extraction was sound -- it just needed
+checking rather than trusting.
+
+### 9.1 What the recovered table does not carry
+
+`bs_stages[]` holds `cameraZoom` and the three character slots. The JSON also
+holds **169 stage props** across the 21 stages -- background layers each with
+their own position, scale, parallax `scroll` factor and `zIndex`.
+
+`main.c` compresses that into one window and one scroll factor:
+
+```c
+#define STAGE_SCROLL (0.9f)
+#define STAGE_WIN_X  (88.3500f)
+#define STAGE_WIN_Y  (78.9000f)
+#define STAGE_WIN_W  (1427.3000f)
+#define STAGE_WIN_H  (859.2000f)
+```
+
+Measured against `mainStage.json` plus the real PNGs:
+
+| layer | position | scale | scroll | image |
+|---|---|---|---|---|
+| `stageBack` | `[-600, -200]` | `1.0` | `0.9` | 2560x1400, 1 channel |
+| `stageFront` | `[-650, 600]` | `1.1` | `0.9` | 2560x581, 4 channels |
+| `stageCurtains` | `[-500, -300]` | `0.9` | **1.3** | 2560x1400, 4 channels |
+
+The union of those three is `(-650, -300)` to `(2166, 1239.1)` -- 2816 x 1539.1
+world units -- and it uses **two** scroll factors, not one.
+
+So two things are true and neither is fixed by this pass:
+
+1. `STAGE_SCROLL 0.9` is the back/front factor. The curtains use `1.3`, and
+   `STAGE_WIN_W/H` do not equal the props union in either axis (2816/1427.3 is
+   not 1539.1/859.2), so the port's window is *some* sub-rectangle of the
+   stage, not the whole stage. What rectangle it is, and why, is not recorded
+   anywhere I can check, so **`STAGE_WIN_*` is unverified** -- flagged rather
+   than guessed at.
+2. The port draws one composited 512x256 texture. The real stage is three
+   layers of up to 2560x1400, which is why the VRAM budget's "naive" figure
+   for `tankmanBattlefield` (4,783,744 B) was so far over the 1,900,544 B
+   available -- those are the real image sizes, not estimates.
+
+`tools/dump_stage_geometry.py` prints the union and the scroll factors for
+every stage. It can only compute a complete box for `mainStage` right now,
+because it needs each prop's pixel size and the other stages' images are not
+downloaded yet. It says so instead of inventing sizes.
+
+### 9.2 Character JSONs are not what the port needs
+
+`assets/shared/characters/<id>/` holds the character folders, but they contain
+**spritemaps and animation data**, not gameplay definitions. The one `bf.json`
+in that tree is a freeplay/results/character-select descriptor (`ownedChars`,
+`freeplayDJ`, `results`, `stickerPack`) -- no `offsets`, no `cameraOffsets`,
+no `singTime`.
+
+So the gameplay character numbers in `bs_dados.h` (`bs_char_t`: `offsets`,
+`cameraOffsets`, `singTime`) do **not** come from a JSON that can be diffed
+the way the stages and songs can. They were extracted from the compiled
+game or from `Character.hx`'s defaults. `bs_dados.h`'s character table is
+therefore still **unverified**, and the checker says so rather than
+implying it was checked. That is a real gap in the fidelity proof and it is
+listed as such.

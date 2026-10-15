@@ -29,6 +29,14 @@ echo "== song_registry is generated from assets-data/ =="
 python3 tools/gen_song_registry.py --check
 echo
 
+echo "== bs_dados.h stage table matches the game's own JSON =="
+python3 tools/check_bs_dados.py
+echo
+
+echo "== stage geometry =="
+python3 tools/dump_stage_geometry.py
+echo
+
 echo "== chart converter =="
 python3 tools/fnf_to_fch3.py --selftest
 echo
