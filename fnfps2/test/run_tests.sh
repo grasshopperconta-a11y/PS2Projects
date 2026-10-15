@@ -83,6 +83,15 @@ echo "== FCH4 round trip: no parameter is dropped =="
 python3 tools/test_fch4.py
 echo
 
+# The event module reads the v4 fields the way the original's event classes do,
+# checked against the tutorial's own 26 events plus milf's SetCameraBop and
+# spaghetti's 15 SetHealthIcon -- the only charts that have them.
+echo "== chart_events: FCH4 fields -> the original's semantics =="
+$CC $FLAGS test/test_chart_events.c src/chart_events.c src/tutorial_chart.c \
+    -o /tmp/fnf_test_chart_events -lm
+/tmp/fnf_test_chart_events
+echo
+
 for dir in build/charts build/charts-v3; do
     n=0
     for f in $dir/*.chart; do

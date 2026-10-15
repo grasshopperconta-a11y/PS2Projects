@@ -1,5 +1,5 @@
 EE_BIN = fnf_ps2_m84.elf
-EE_OBJS = src/main.o src/title_packs.o src/story_packs.o src/audio_ring.o src/tutorial_chart.o src/telemetry.o src/iomanX_irx.o src/fileXio_irx.o src/usbd_irx.o src/usbhdfsd_irx.o src/audsrv_irx.o
+EE_OBJS = src/main.o src/title_packs.o src/story_packs.o src/audio_ring.o src/tutorial_chart.o src/chart_events.o src/telemetry.o src/iomanX_irx.o src/fileXio_irx.o src/usbd_irx.o src/usbhdfsd_irx.o src/audsrv_irx.o
 EE_LIBS = -ldraw -lgraph -lpacket -ldma -lmath3d -lpad -laudsrv -lfileXio -lpatches
 # FNF_VERSION e FNX_EXTRA existem para permitir gerar variantes comparaveis
 # sem sobrescrever EE_CFLAGS na linha de comando (isso descartaria o -D_EE

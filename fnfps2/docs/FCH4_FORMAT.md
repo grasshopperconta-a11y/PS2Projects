@@ -169,6 +169,73 @@ meaning so a reader can dispatch on the magic and then read the right strides:
 44  u32   block_count
 ```
 
+## 3. What wiring it into main.c found
+
+`src/chart_events.c` is the module that reads these records, and
+`test/test_chart_events.c` proves it against the real charts. Building it caught
+four things that the round-trip test could not, because the round trip only
+checks that a value survives -- it does not check that the port *uses* it the way
+the original does.
+
+**The ease is a string-table index, not a fixed-list index.** The converter
+writes `b`'s ease field as an index into the file's own string table
+(`tools/fnf_to_fch3.py:452` says so in as many words). The first version of
+`chart_events.c` read it as an index into the 13-name list, which is the exact
+bug the round trip had already caught once -- an ease name the port has never
+heard of would silently point at the wrong curve. `chart_events_ease_id()` now
+resolves the name through `chart_event_string()`. The tutorial's ZoomCamera
+carries `elasticInOut` at string index 0, so index 0 has to mean a curve, not
+"absent".
+
+**`elastic` + `InOut` and `elasticInOut` are one curve.** The original builds
+`'$ease$easeDir'` and looks the result up in `FlxEase`, so both spellings find
+the same function. The charts use both: `elasticInOut` 11 times and `elastic`
+with `easeDir InOut` 5 times. `elasticIn` and `elasticOut` are never used by any
+of the 27 charts, so rather than invent them both fall back to the InOut curve
+and say so.
+
+**`boyfriend` and `bf` are the same target id.** `tools/fnf_to_fch3.py` maps
+both to 0. The header documented them as 0 and 1, which would have sent every
+`PlayAnimation` aimed at `boyfriend` at a target that does not exist.
+
+**Two PlayAnimation events can land on the same sample, and both must fire.**
+The tutorial fires `hey` on boyfriend and `cheer` on dad together at 18,600 ms,
+and philly-nice does the same. A single pending slot silently dropped the first.
+The module now keeps a small queue; measured across all 27 charts the most that
+ever pile up on one sample is 2, so a queue of 4 is generous. This is the one
+place where an event is an *action* rather than a *state*: `SetHealthIcon` and
+`SetCameraBop` are last-wins, because the original simply applies them in order
+and the icon and the bop have one current value each.
+
+The three events that had no port-side state now have one:
+
+* **SetCameraBop** (105 events) sets the bop's intensity, rate and offset,
+  replacing the hardcoded `1.015` and every-16-steps. milf's first is
+  `{intensity: 2.5, rate: 1}`, which the original turns into an intensity of
+  `(1.015 - 1) * 2.5 + 1 = 1.0375` firing every 4 steps instead of every 16.
+  Its second, `{intensity: 1, rate: 4}`, is the documented reset and lands back
+  on the defaults.
+* **SetHealthIcon** (15 events, all in spaghetti) sets the icon's character,
+  flip flag and id. Fourteen target the opponent and name an SSERAFIM member;
+  the fifteenth, sharing a sample with one of them, is `{char: 0, flipX: true,
+  id: 'bf'}`.
+* **PlayAnimation** (32 events) is queued and reported. The tutorial's packs
+  have no `hey` or `cheer` frame to show, so the port emits a telemetry event
+  rather than dropping it silently -- the place it becomes visible is a song
+  whose packs actually carry those animations.
+
+`main.c` keeps its own event loop and its telemetry, and calls
+`chart_events_apply()` per event, so the diff is one call site rather than a
+rewritten pump. The tween advance and the bop decay moved out of the draw block
+into `chart_events_tick()`, and the duplicate `fnf_elastic_in_out` /
+`fnf_expo_in` copies in main.c were deleted -- two implementations of the same
+curve is how the wrong values got in before.
+
+`test/test_chart_events.c` also reproduces main.c's exact call shapes with the
+same variable types, against the real headers, because main.c itself cannot be
+compiled here. If a signature drifts, that is where it is caught before the
+user's build breaks.
+
 ## Per-event mapping
 
 Every parameter in the survey, and where it goes. Nothing is dropped.

@@ -23,6 +23,7 @@
 #include "story_generated.h"
 #include "story_titles_generated.h"
 #include "tutorial_chart.h"
+#include "chart_events.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -79,18 +80,18 @@ static int g_tutorial_scene_ready=0,g_tutorial_scene_attempted=0,g_tutorial_scen
    zoom absoluto. Nao se multiplica pelo cameraZoom 1,1 do palco.
    duration 4 passos * stepLengthMs 150 (100 BPM) / 1000 = 0,600 s.
    ease elasticInOut. Antes do primeiro evento vale o 1,1 do palco. */
-#define TUT_ZOOM_DUR 0.600000f
 #define TUT_DT 0.016683333f
-static float g_tut_zoom=1.1f,g_tut_zoom_from=1.1f,g_tut_zoom_to=1.1f,g_tut_zoom_t=1.0f;
+/* g_tut_zoom mirrors chart_events_state()->zoom so the draw code below reads a
+   plain float. The tween itself, its duration and its ease all live in
+   chart_events.c, where they come from the event rather than from here. */
+static float g_tut_zoom=1.1f;
 /* ScrollSpeedEvent.hx. O evento do Tutorial aos 60.000 ms e
      {absolute:false, duration:4, ease:'expoIn', scroll:1.2, strumline:'both'}
    Como absolute e falso, scroll = 1.2 * chart.scrollSpeed, e o
    tutorial-chart.json traz scrollSpeed {easy:1, normal:1, hard:1}, logo o
    alvo e 1,2 mesmo. duration 4 passos * stepLengthMs 150 = 0,600 s.
    FlxEase.expoIn(t) = (t==0) ? 0 : 2^(10*(t-1)). */
-#define TUT_SCROLL_DUR 0.600000f
-static float g_tut_scroll=1.0f,g_tut_scroll_from=1.0f,g_tut_scroll_to=1.0f,g_tut_scroll_t=1.0f;
-static float fnf_expo_in(float t){if(t<=0.0f)return 0.0f;if(t>=1.0f)return 1.0f;return powf(2.0f,10.0f*(t-1.0f));}
+static float g_tut_scroll=1.0f;   /* mirrors chart_events_state()->scroll */
 /* ANIMACOES DE CANTO.
    Os quadros JA ESTAVAM nos packs e nunca eram usados: o port tocava so
    af%14 do BF e af%30 da GF, deixando 29 e 57 quadros parados. As faixas
@@ -123,11 +124,11 @@ static float fnf_expo_in(float t){if(t<=0.0f)return 0.0f;if(t>=1.0f)return 1.0f;
    Passo em amostras: stepLengthMs 150 * 48000 / 1000 = 7200.
    Nao implementei o teto MAX_RELATIVE_CAM_ZOOM 1.35 porque ele vigia o
    zoom da camera do HUD, que o port ainda nao tem separada. */
-#define TUT_BOP_INTENSITY 1.015f
-#define TUT_BOP_DECAY 0.949951f
-#define TUT_BOP_STEPS 16u
 #define TUT_SAMPLES_PER_STEP 7200u
-static float g_tut_bop=1.0f;static u32 g_tut_bop_step=0xffffffffu;
+/* The bop's intensity, rate and offset are SetCameraBop's to set, and its decay
+   is PlayState.hx:1217's 0.95^(dt*60). All of it now lives in chart_events.c;
+   g_tut_bop mirrors the multiplier so the draw code reads a plain float. */
+static float g_tut_bop=1.0f;
 static const unsigned char BF_SING[4][2]={{14,8},{22,7},{29,7},{36,7}};
 static const unsigned char GF_SING[4][2]={{57,15},{37,20},{30,7},{72,15}};
 static int g_bf_sing=-1,g_gf_sing=-1;static u32 g_bf_sing_at=0,g_gf_sing_at=0;
@@ -138,13 +139,6 @@ static int tut_anim_idx(int *sing,u32 at,u32 now,const unsigned char tb[4][2],u3
   *sing=-1;
  }
  return (int)(af%idle_len);
-}
-static float fnf_elastic_in_out(float t){
- const float TAU_045=13.962634016f; /* 2*pi/0.45 */
- if(t<=0.0f){return 0.0f;}
- if(t>=1.0f){return 1.0f;}
- if(t<0.5f){float u=t*2.0f-1.0f;return -0.5f*(powf(2.0f,10.0f*u)*sinf((u-0.1125f)*TAU_045));}
- {float u=t*2.0f-1.0f;return powf(2.0f,-10.0f*u)*sinf((u-0.1125f)*TAU_045)*0.5f+1.0f;}
 }
 static int g_tut_cam_focus=0,g_tut_cam_ready=0;static float g_tut_cam_x=0.0f,g_tut_cam_y=0.0f;
 static int g_tutorial_bf_w=0,g_tutorial_bf_h=0,g_tutorial_gf_w=0,g_tutorial_gf_h=0;
@@ -1234,11 +1228,27 @@ if((pressed&PAD_START)&&(g_held&PAD_SELECT))running=0;
    const tutorial_chart_event_t *event;
    while(g_tutorial_chart_cursor<g_tutorial_chart_info.event_count){
     event=tutorial_chart_event(g_tutorial_chart_cursor);if(!event||event->sample>music_clock)break;
-    g_tutorial_chart_last_type=event->type;g_tutorial_chart_last_value=event->value;g_tutorial_chart_last_sample=event->sample;if(event->type==1u)g_tut_cam_focus=(event->value!=0u);else if(event->type==2u){g_tut_zoom_from=g_tut_zoom;g_tut_zoom_to=(float)(event->value&0xFFFFu)/1000.0f;g_tut_zoom_t=0.0f;}else if(event->type==4u){g_tut_scroll_from=g_tut_scroll;g_tut_scroll_to=(float)(event->value&0xFFFFu)/1000.0f;g_tut_scroll_t=0.0f;}
+    /* Every event's meaning now lives in chart_events.c, which reads the FCH4
+       fields. The v3 code that was here packed one parameter into `value` and
+       dropped the rest, so SetCameraBop, SetHealthIcon and PlayAnimation never
+       reached the port at all. */
+    chart_events_apply(event);
+    g_tutorial_chart_last_type=event->type;g_tutorial_chart_last_value=event->value;g_tutorial_chart_last_sample=event->sample;
     g_tutorial_chart_cursor++;g_tutorial_chart_seen++;
     telemetry_event("tutorial_chart_event",(int)event->type,(int)event->sample);
    }
   }
+  {u32 aref=0;int at=-1,af2=0;
+   while(chart_events_take_anim(&aref,&at,&af2)){
+    const char*an=chart_event_string(aref);
+    /* PlayAnimationSongEvent.hx: target 0 is bf/boyfriend, 2 is dad, 3 is gf,
+       and force also decides whether the character plays vocals. The tutorial
+       fires 'hey' on boyfriend and 'cheer' on dad; neither exists as a frame in
+       the tutorial's packs, so the port reports the event instead of dropping
+       it. A song whose packs carry those anims is where this becomes visible. */
+    /* the anim name's first byte and the force flag, packed into one word */
+    telemetry_event("tut_play_anim",at,(int)((an?(unsigned char)an[0]:0)|(af2<<8)));
+   }}
   if(ui_state==8&&audio_started)tutorial_notes_update(music_clock,pressed,frame_no);
   if(ui_state==8&&audio_started&&audio_ring_eof()&&ring_bytes==0&&queued_bytes==0){
    audsrv_stop_audio();audio_playing=0;audio_started=0;g_tutorial_audio_finished=1;transport_state=4;
@@ -1288,6 +1298,11 @@ if((pressed&PAD_START)&&(g_held&PAD_SELECT))running=0;
   tutorial_notes_reset();
   capture_status("TUT_CHART_BEGIN",(int)frame_no,0);
   g_tutorial_chart_status=tutorial_chart_load("mass:/FNFPS2/assets/test.chart",&g_tutorial_chart_info);
+  /* The event module reads the chart through the same loader, so it needs the
+     info struct and the step length. The tutorial is 100 BPM, so a step is
+     150 ms, which at 48 kHz is 7200 samples. */
+  chart_events_init(TUT_SAMPLES_PER_STEP);
+  chart_events_bind(&g_tutorial_chart_info);
   chart_rc=g_tutorial_chart_status;
   capture_status("TUT_CHART_DONE",(int)frame_no,chart_rc);
   telemetry_event("tutorial_chart",g_tutorial_chart_status,(int)g_tutorial_chart_info.checksum);
@@ -1316,7 +1331,7 @@ if((pressed&PAD_START)&&(g_held&PAD_SELECT))running=0;
      if(g_story_wait>240){capture_status("STORY_WAIT_GIVEUP",g_story_wait,0);story_assets_ready=1;}
    }else if(target_state!=7)g_story_wait=0;
    if(!((ui_state==0||ui_state==6||ui_state==7)&&transition_frame==transition_mid&&g_gf_reload_active==1)&&!(target_state==6&&transition_frame==transition_mid&&!g_menu_cache_ready)&&!(target_state==7&&transition_frame==transition_mid&&!story_assets_ready))transition_frame++;
-   if(transition_frame==transition_mid+1){int previous_state=ui_state;ui_state=target_state;telemetry_event("state",ui_state,(int)frame_no);if(ui_state==8){g_tut_cam_focus=0;g_tut_cam_ready=0;g_tut_zoom=g_tut_zoom_from=g_tut_zoom_to=g_official_mainstage_camera_zoom;g_tut_zoom_t=1.0f;g_tut_scroll=g_tut_scroll_from=g_tut_scroll_to=1.0f;g_tut_scroll_t=1.0f;g_bf_sing=g_gf_sing=-1;g_tut_bop=1.0f;g_tut_bop_step=0xffffffffu;capture_status("TUT_STATE_ACTIVE",(int)frame_no,g_tutorial_audio_status);}transform_mode=0;last=-1;last2=-1;if(ui_state==6){selection=g_menu_remembered;/* O original SNAPA a camera para o item lembrado, nao varre: L242
+   if(transition_frame==transition_mid+1){int previous_state=ui_state;ui_state=target_state;telemetry_event("state",ui_state,(int)frame_no);if(ui_state==8){g_tut_cam_focus=0;g_tut_cam_ready=0;g_tut_zoom=g_official_mainstage_camera_zoom;g_tut_scroll=1.0f;g_bf_sing=g_gf_sing=-1;g_tut_bop=1.0f;chart_events_reset(g_official_mainstage_camera_zoom,1.0f);capture_status("TUT_STATE_ACTIVE",(int)frame_no,g_tutorial_audio_status);}transform_mode=0;last=-1;last2=-1;if(ui_state==6){selection=g_menu_remembered;/* O original SNAPA a camera para o item lembrado, nao varre: L242
    selectItem() dispara onChange (MenuList.hx L341, sem guarda) que move
    camFollow para o item selecionado ANTES de resetCamStuff()/snapToTarget()
    (L258 + L343-345). Por isso menu_cam_y ja nasce no alvo. */menu_cam_y=40.0f+160.0f*(float)g_menu_remembered;menu_placeholder=0;menu_anim_tick=-1;if(previous_state==1){audsrv_stop_audio();g_title_audio_submitted=0;g_menu_sfx_pos=g_menu_sfx_end=g_menu_sfx_phase=0;if(g_title_audio_fd>=0)close(g_title_audio_fd);g_title_audio_fd=-1;if(audio_ok&&audio_set_stream(audio_volume)==0)g_title_audio_fd=open("mass:/FNFPS2/assets/freakyMenu_48000.pcm",O_RDONLY);if(g_title_audio_fd>=0){audio_ring_stop();audio_ring_start_loop(g_title_audio_fd,1);}telemetry_event("menu_restore",0,g_title_audio_fd>=0); }setup_texture_dims(&stagetex,512,256);memcpy(g_up_bounce,g_menu_pixels+MENU_FRAMES_BYTES,512u*256u*4u);upload_raw(&stagetex,g_up_bounce,512,256);}else if(ui_state==7){{u32 aq0=(g_title_audio_fd>=0)?(u32)audsrv_queued():0u;g_story_anim_heard_samples=g_title_audio_submitted>aq0/4u?g_title_audio_submitted-aq0/4u:0u;}story_diff=1;story_level=0;g_story_title_y_ready=0;if(previous_state==1||previous_state==8){audsrv_stop_audio();g_title_audio_submitted=0;g_menu_sfx_pos=g_menu_sfx_end=g_menu_sfx_phase=0;if(g_title_audio_fd>=0)close(g_title_audio_fd);g_title_audio_fd=-1;if(audio_ok&&audio_set_stream(audio_volume)==0)g_title_audio_fd=open("mass:/FNFPS2/assets/freakyMenu_48000.pcm",O_RDONLY);if(g_title_audio_fd>=0){audio_ring_stop();audio_ring_start_loop(g_title_audio_fd,1);menu_audio_prime();g_menu_audio_suspended=0;}}telemetry_event("story_music",previous_state,g_title_audio_fd>=0);}else if(ui_state==0){telemetry_event("title_anim_reuse",g_title_anim_status,g_title_anim_pixels!=0);audio_started=0;audio_playing=0;clock_hold=1;transport_state=0;title_intro_active=0;title_confirm_frames=0;title_intro_flash_frames=60;title_logo_last=title_gf_last=-1;setup_texture_dims(&fonttex,384,192);memcpy(g_up_bounce,g_menu_pixels+TITLE_SNAPSHOT_ALPHA,384u*192u*4u);upload_raw(&fonttex,g_up_bounce,384,192);menu_anim_tick=-1;setup_texture_dims(&stagetex,512,192);memcpy(g_up_bounce,g_menu_pixels+TITLE_SNAPSHOT_PROMPT_L,512u*192u*4u);upload_raw(&stagetex,g_up_bounce,512,192);setup_texture_dims(&tex2,320,192);memcpy(g_up_bounce,g_menu_pixels+TITLE_SNAPSHOT_PROMPT_R,320u*192u*4u);upload_raw(&tex2,g_up_bounce,320,192);menu_anim_tick=-1;setup_texture_dims(&tex,TITLE_LOGO_W,TITLE_LOGO_H);gftex.width=256;setup_texture_dims(&gftex,TITLE_GF_W,TITLE_GF_H);upload_raw(&tex,g_gf_pixels,TITLE_LOGO_W,TITLE_LOGO_H);menu_anim_tick=-1;upload_raw(&gftex,g_gf_pixels+TITLE_GF_STORE_OFFSET,TITLE_GF_W,TITLE_GF_H);menu_anim_tick=-1;title_ng_restored=1;if(g_title_audio_fd<0&&audio_ok&&audio_set_stream(audio_volume)==0){g_title_audio_fd=open("mass:/FNFPS2/assets/freakyMenu_48000.pcm",O_RDONLY);if(g_title_audio_fd>=0){audio_ring_stop();audio_ring_start_loop(g_title_audio_fd,1);telemetry_event("ring_source",0,1);}}}}
@@ -1381,6 +1396,9 @@ tutorial_packs_free();story_assets_ready=0;target_state=7;transition_frame=1;tra
 
   if(ui_state==0){if(g_title_anim_status==-2){if(g_title_anim_pixels)free(g_title_anim_pixels);g_title_anim_pixels=0;g_title_anim_status=-3;}if(g_title_anim_status==1&&!g_title_anim_ready_logged){telemetry_event("title_anim_ready",TITLE_LOGO_BYTES,TITLE_GF_BYTES);g_title_anim_ready_logged=1;}u32 raw_th=0,bs=12970u;int tqb=(g_title_audio_fd>=0?audsrv_queued():-1);if(g_title_audio_submitted<g_title_anim_last_submitted)g_title_anim_heard_samples=0;g_title_anim_last_submitted=g_title_audio_submitted;if(tqb>=0){u32 tq=(u32)tqb/4u;raw_th=g_title_audio_submitted>tq?g_title_audio_submitted-tq:0u;if(raw_th>g_title_anim_heard_samples)g_title_anim_heard_samples=raw_th;}u64 oldth=((u64)g_title_anim_heard_samples*147u)/320u;u32 phase=(u32)(oldth%bs),beat=(u32)(oldth/bs);unsigned int lf=(unsigned int)(((oldth*24u)/22050u)%TITLE_LOGO_FRAMES),gf=(beat&1u)*15u+(unsigned int)(((u64)phase*24u)/22050u);if(gf>=((beat&1u)*15u+15u))gf=(beat&1u)*15u+14u;if((!title_intro_active||title_ng_restored)&&(int)lf!=title_logo_last){setup_texture_dims(&tex,TITLE_LOGO_W,TITLE_LOGO_H);upload_raw(&tex,(g_title_logo_ready&(1u<<lf))?g_title_anim_pixels+(u32)lf*TITLE_LOGO_FRAME_BYTES:g_gf_pixels,TITLE_LOGO_W,TITLE_LOGO_H);title_logo_last=(int)lf;}if(!title_intro_active&&(int)gf!=title_gf_last){if(frame_no==0)capture_status("F0_TITLE_UPLOAD_BEGIN",-1,0);upload_raw(&gftex,(g_title_gf_ready&(1u<<gf))?g_title_anim_pixels+TITLE_LOGO_BYTES+(u32)gf*TITLE_GF_FRAME_BYTES:g_gf_pixels+TITLE_GF_STORE_OFFSET,TITLE_GF_W,TITLE_GF_H);if(frame_no==0)capture_status("F0_TITLE_UPLOAD_DONE",-1,0);title_gf_last=(int)gf;}}
   if(ui_state==7&&story_level==0&&g_story_anim_ready){u32 aq=(g_title_audio_fd>=0)?(u32)audsrv_queued():0u;u32 raw_heard=g_title_audio_submitted>aq/4u?g_title_audio_submitted-aq/4u:0u;if(raw_heard>g_story_anim_heard_samples)g_story_anim_heard_samples=raw_heard;u32 heard=g_story_anim_heard_samples;u64 units=(u64)heard*102u;u32 dance=(u32)(units/5760000u),phase=(u32)(((units%5760000u)*24u)/5760000u),gfi,bf;if(phase>14u)phase=14u;gfi=(dance&1u)?14u+phase:(phase?phase-1u:29u);bf=phase>13u?13u:phase;if((int)bf!=g_story_bf_uploaded&&tutorial_pack_frame(g_story_bf_pack,g_story_bf_pack_bytes,bf,14,164u*165u*4u,g_story_bf_pixels)==0){FlushCache(0);setup_texture_dims(&gftex,164,165);upload_raw(&gftex,g_story_bf_pixels,164,165);g_story_bf_uploaded=(int)bf;}if((int)gfi!=g_story_gf_uploaded&&tutorial_pack_frame(g_story_gf_pack,g_story_gf_pack_bytes,gfi,30,170u*157u*4u,g_story_gf_pixels)==0){FlushCache(0);setup_texture_dims(&tex2,170,157);upload_raw(&tex2,g_story_gf_pixels,170,157);g_story_gf_uploaded=(int)gfi;}}
+  /* FocusCameraSongEvent.hx: char 0 is BF, 1 is the opponent, 2 is GF. The
+     tutorial's opponent IS gf, so both 1 and 2 focus her and 0 focuses BF. */
+  {const chart_event_state_t*ev=chart_events_state();g_tut_cam_focus=(ev->cam_char==CHART_FOCUS_GF||ev->cam_char==CHART_FOCUS_DAD)?1:0;}
   if(ui_state==8&&g_tutorial_scene_ready&&g_tutorial_audio_status==0){u32 af=(u32)(((u64)music_clock*24u)/48000u);int bfi=tut_anim_idx(&g_bf_sing,g_bf_sing_at,music_clock,BF_SING,14u,af),gfi=tut_anim_idx(&g_gf_sing,g_gf_sing_at,music_clock,GF_SING,30u,af);if(bfi!=g_tutorial_bf_uploaded&&tutorial_pack_frame(g_tutorial_bf_pack,g_tutorial_bf_pack_bytes,(u32)bfi,43,258u*254u*4u,g_stage_pixels)==0){FlushCache(0);setup_texture_dims(&tex,258,254);upload_raw(&tex,g_stage_pixels,258,254);g_tutorial_bf_uploaded=bfi;}if(gfi!=g_tutorial_gf_uploaded&&tutorial_pack_frame(g_tutorial_gf_pack,g_tutorial_gf_pack_bytes,(u32)gfi,87,320u*307u*2u,g_hud_pixels)==0){FlushCache(0);setup_texture_dims(&g_gftex16,320,307);upload_raw_psm(&g_gftex16,g_hud_pixels,320,307,GS_PSM_16);g_tutorial_gf_uploaded=gfi;}}
   if(ui_state==6){qword_t*mq=packet->data;int tick=(int)(frame_no*24u/60u),mi;setup_texture_dims(&stagetex,512,256);memcpy(g_up_bounce,g_menu_pixels+MENU_FRAMES_BYTES,512u*256u*4u);upload_raw(&stagetex,g_up_bounce,512,256);mq=draw_setup_environment(mq,0,&fb[draw],&z);mq=draw_clear(mq,0,0,0,SCREEN_W,SCREEN_H,0,0,0);mq=bind_texture(mq,&stagetex);{/* 0.2.104 A4: parallax do fundo, scrollFactor.y = 0,17 no original
      (MainMenuState.hx L119-120). Derivacao, em unidades do original:
@@ -1527,7 +1545,7 @@ q=draw_scissor_area(q,0,0,SCREEN_W-1,0,SCREEN_H-1);}
    q=rect(q,330,158,330+slider_value*15,174,245,70,150);
   }else if(ui_state==0){
    /* Official title atlas; no provisional menu rectangles. */
-  }else if(ui_state==8&&g_tutorial_scene_ready){q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);/* Official character-space reconstruction. BFA2 canvases are already stored at half of the original 1280x720 character canvas, while stage positions and metadata offsets remain original-space values. Final top-left follows Stage.addCharacter/BaseCharacter.setScale: feet - full canvas origin + per-character global offset. Camera focus follows BaseCharacter.resetCameraFocusPoint plus stage camera offset. */if(g_tut_zoom_t<1.0f){g_tut_zoom_t+=TUT_DT/TUT_ZOOM_DUR;if(g_tut_zoom_t>1.0f)g_tut_zoom_t=1.0f;g_tut_zoom=g_tut_zoom_from+(g_tut_zoom_to-g_tut_zoom_from)*fnf_elastic_in_out(g_tut_zoom_t);}if(g_tut_scroll_t<1.0f){g_tut_scroll_t+=TUT_DT/TUT_SCROLL_DUR;if(g_tut_scroll_t>1.0f)g_tut_scroll_t=1.0f;g_tut_scroll=g_tut_scroll_from+(g_tut_scroll_to-g_tut_scroll_from)*fnf_expo_in(g_tut_scroll_t);}g_tut_bop=1.0f+(g_tut_bop-1.0f)*TUT_BOP_DECAY;{u32 st=music_clock/TUT_SAMPLES_PER_STEP;if(st!=g_tut_bop_step&&(st%TUT_BOP_STEPS)==0u){g_tut_bop_step=st;g_tut_bop=TUT_BOP_INTENSITY;}}float sc=.5f*g_tut_zoom*g_tut_bop;const float bf_source_w=496.920f,bf_source_h=490.920f,bf_pack_scale=.5f,gf_source_w=703.300f,gf_source_h=674.850f,gf_pack_scale=.443623f;/* A GF ocupa o slot gf [751.5,787], provado pela captura do jogo real:
+  }else if(ui_state==8&&g_tutorial_scene_ready){q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);/* Official character-space reconstruction. BFA2 canvases are already stored at half of the original 1280x720 character canvas, while stage positions and metadata offsets remain original-space values. Final top-left follows Stage.addCharacter/BaseCharacter.setScale: feet - full canvas origin + per-character global offset. Camera focus follows BaseCharacter.resetCameraFocusPoint plus stage camera offset. */{const chart_event_state_t*ev=chart_events_state();chart_events_tick(TUT_DT,music_clock/TUT_SAMPLES_PER_STEP);g_tut_zoom=ev->zoom;g_tut_scroll=ev->scroll;g_tut_bop=ev->bop;}float sc=.5f*g_tut_zoom*g_tut_bop;const float bf_source_w=496.920f,bf_source_h=490.920f,bf_pack_scale=.5f,gf_source_w=703.300f,gf_source_h=674.850f,gf_pack_scale=.443623f;/* A GF ocupa o slot gf [751.5,787], provado pela captura do jogo real:
    a arte dela comeca em 6 px dentro da tela de 255x245 do pack, o que
    da 6/0,35 = 17,14 unidades de mundo. No slot dad isso cairia em
    -181,5 de tela, fora do ecra; no slot gf cai em +47,6, visivel.
