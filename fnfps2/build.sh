@@ -161,16 +161,22 @@ if [ "$DO_TESTS" = 1 ]; then
         T0=$(date +%s)
         if ./test/run_tests.sh >build-tests.log 2>&1; then
             ok "all suites passed ($(($(date +%s) - T0))s)"
+            rm -f build-tests.log
         else
             printf '\n'
             # Show the tail of the log, which is where a failure reports itself,
             # rather than making the user scroll the whole thing.
-            tail -25 build-tests.log
-            rm -f build-tests.log
+            tail -40 build-tests.log
+            # Then keep it. An earlier version deleted the log in this branch,
+            # and the .bat names build.log -- which only the PS2 build creates,
+            # further down -- so a suite failure pointed the user at a file that
+            # was never written. They went looking, found nothing, and had to
+            # paste the console by hand. Save it under both names: build.log is
+            # the one they are told about, build-tests.log is the honest one.
+            cp -a build-tests.log build.log 2>/dev/null || true
             die "the offline suite failed. Fix that first -- a PS2 build would
-     only repeat the same mistake more slowly."
+     only repeat the same mistake more slowly. Full log: build.log"
         fi
-        rm -f build-tests.log
     fi
 fi
 

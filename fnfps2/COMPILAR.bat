@@ -79,6 +79,16 @@ echo ============================================================
 echo.
 echo   Pasta: %HERE%
 echo.
+REM Qual pacote eh este. Sem esta linha, "o erro ainda acontece" nao distingue
+REM "a correcao nao funciona" de "ele extraiu por cima da pasta velha e rodou
+REM o codigo antigo" -- e as duas pedem respostas diferentes. REVISAO.txt eh
+REM escrito pelo empacotador, entao muda so' quando o pacote muda de verdade.
+if exist "%~dp0REVISAO.txt" (
+    for /f "usebackq delims=" %%R in ("%~dp0REVISAO.txt") do echo   Pacote:  %%R
+) else (
+    echo   Pacote:  SEM REVISAO.txt ^(versao desconhecida -- reextraia^)
+)
+echo.
 
 REM ------------------------------------------------------------- 1. find WSL
 
@@ -242,8 +252,21 @@ if errorlevel 1 (
     echo   O BUILD FALHOU.
     echo ============================================================
     echo.
-    echo   O log completo esta' em:
-    echo       %HERE%\build.log
+REM build.sh agora guarda o log da suite offline com o nome build.log,
+REM que antes so' existia quando a compilacao do PS2 chegava a rodar. Se
+REM por acaso nenhum dos dois existir, diz isso em vez de apontar para um
+REM arquivo fantasma.
+    if exist "%HERE%\build.log" (
+        echo   O log completo esta' em:
+        echo       %HERE%\build.log
+    ) else if exist "%HERE%\build-tests.log" (
+        echo   O log completo esta' em:
+        echo       %HERE%\build-tests.log
+    ) else (
+        echo   Nao achei build.log nem build-tests.log em:
+        echo       %HERE%
+        echo   Me manda uma foto da tela inteira acima.
+    )
     echo.
     echo   Me manda esse arquivo que eu resolvo.
     echo.

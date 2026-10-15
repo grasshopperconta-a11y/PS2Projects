@@ -5,3 +5,7 @@ build/
 __pycache__/
 *.pyc
 build/charts-v3/
+
+# Written by tools/empacotar.sh at package time, never by hand: it names the
+# revision inside the tarball, so it must move with the commit, not sit in it.
+REVISAO.txt
