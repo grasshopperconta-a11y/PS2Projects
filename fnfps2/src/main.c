@@ -156,7 +156,7 @@ static int g_tutorial_audio_status=-1,g_tutorial_audio_finished=0,g_tutorial_cha
 static tutorial_chart_info_t g_tutorial_chart_info;
 static u32 g_tutorial_chart_cursor=0,g_tutorial_chart_seen=0,g_tutorial_chart_last_type=0,g_tutorial_chart_last_value=0,g_tutorial_chart_last_sample=0;
 static int g_tutorial_note_asset_status=-1,g_tutorial_note_visible=-1,g_tutorial_note_feedback=0;
-#define TUTORIAL_MAX_NOTES 1024u /* acompanha CHART_MAX_NOTES, ver 0.2.76 */
+#define TUTORIAL_MAX_NOTES 1280u /* acompanha CHART_MAX_NOTES: 2hot-HARD tem 1.035 notas */
 static unsigned char g_tutorial_note_state[TUTORIAL_MAX_NOTES];
 static u32 g_tutorial_note_score=0,g_tutorial_note_hits=0,g_tutorial_note_misses=0,g_tutorial_note_combo=0,g_tutorial_note_feedback_frame=0;
 

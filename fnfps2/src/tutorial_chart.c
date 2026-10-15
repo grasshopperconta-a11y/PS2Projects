@@ -4,17 +4,23 @@
 #include <string.h>
 
 #define CHART_HEADER_BYTES 40u
-/* Limites elevados em 0.2.76. O Butterscotch compilou os 28 charts
-   oficiais e mostrou que so 3 cabiam em 256 notas: bopeebo 102,
-   fresh 210 e tutorial 55. Os outros vao de 263 a 906 notas, com
-   spaghetti chegando a 264 eventos. O limite era arbitrario e o
-   custo de elevar e irrisorio: o payload maximo passa de 11.520 B
-   para 24.832 B de RAM estatica, e o maior chart real, 2hot com 906
-   notas, ocupa 12.632 B. */
-#define CHART_MAX_NOTES 1024u
-#define CHART_MAX_BPMS 16u
-#define CHART_MAX_SECTIONS 512u
-#define CHART_MAX_EVENTS 512u
+/* Limites elevados em 0.2.76, e corrigidos em 0.2.105.
+   A nota da 0.2.76 dizia que o maior chart real era 2hot com 906
+   notas. Isso era o NORMAL. Medindo os 81 charts oficiais
+   (27 musicas x 3 dificuldades) convertidos dos JSON do jogo
+   instalado, o maior e 2hot-HARD com 1.035 notas -- que estourava
+   o limite de 1.024 e fazia o loader devolver -5, ou seja, a
+   musica mais dificil do jogo nao carregava. Os demais maximos
+   reais: 12 bpm (monster-easy), 104 secoes (guns-easy), 468
+   eventos (spaghetti-easy).
+
+   1.280 deixa ~24% de folga sobre o maior observado e custa 3.072 B
+   de RAM estatica a mais (o payload passa de 24.832 B para
+   27.904 B). Os quatro limites sao verificados por
+   test/test_chart_limits.c contra os charts convertidos, para que
+   um chart maior nao volte a quebrar em silencio. */
+/* The four CHART_MAX_* limits live in the header now, so the test suite can
+   check them. They are documented there. */
 #define CHART_MAX_PAYLOAD (CHART_MAX_NOTES*12u+CHART_MAX_BPMS*16u+CHART_MAX_SECTIONS*8u+CHART_MAX_EVENTS*16u)
 
 typedef struct { u32 start_step,start_sample,samples_per_step,bpm; } chart_bpm_t;

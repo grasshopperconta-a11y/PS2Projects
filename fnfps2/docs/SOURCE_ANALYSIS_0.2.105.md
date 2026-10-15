@@ -465,3 +465,88 @@ Verified on the real Tutorial chart, hard: 71 notes, 1 bpm change (100 bpm,
 (11 FocusCamera, 10 ZoomCamera, 4 PlayAnimation, 1 ScrollSpeed), first note the
 opponent's left at sample 460800 (9600 ms at 48 kHz), first zoom target 1.3,
 scroll target 1.2.
+
+## 8. All 27 charts converted, and what the events reveal (2026-10-15)
+
+With the real charts in hand, `run_tests.sh` now converts all 81
+(27 songs x 3 difficulties) and loads every one through the port's real loader.
+
+```
+== real charts -> FCH3 -> real loader ==
+  scanned 81 charts (0 unreadable)
+  max notes    1035  (limit 1280)  2hot-hard.chart
+  max bpm        12  (limit   16)  monster-easy.chart
+  max sections  104  (limit  512)  guns-easy.chart
+  max events    468  (limit  512)  spaghetti-easy.chart
+  all 81 charts load in the real loader
+```
+
+### 8.1 The note limit was too small -- 2hot would not load
+
+The comment in `tutorial_chart.c` claimed the biggest real chart was 2hot with
+906 notes. That was the **normal** difficulty. `2hot-hard` has **1.035 notes**,
+which exceeded `CHART_MAX_NOTES = 1024` and made the loader return -5: the
+hardest chart in the game silently failed to load.
+
+Both limits were raised together -- `CHART_MAX_NOTES` in the loader and
+`TUTORIAL_MAX_NOTES` in `main.c`, which guards the per-note state array and
+would otherwise have skipped the notes past 1024 without a word. The four
+limits moved into `tutorial_chart.h` so `test/test_chart_limits.c` can check
+them against every chart and name the song that breaches one.
+
+### 8.2 Event inventory across all 27 charts
+
+| Event | Count | Primary parameter |
+|---|---|---|
+| `FocusCamera` | 664 | `char` (0 = BF, 1 = opponent) |
+| `ZoomCamera` | 207 | `zoom` |
+| `SetCameraBop` | 105 | `intensity` |
+| `PlayAnimation` | 32 | `anim` / `target` |
+| `SetHealthIcon` | 15 | `char`, `flipX`, `id` |
+| `sserafim*` (10 kinds) | 84 | varies |
+| `ScrollSpeed` | 1 | `scroll` |
+
+Three shapes appear for the value field: a **dict** of named parameters (the
+documented v2 form), a **bare int** (older charts use `"v": 1` for
+`FocusCamera`, meaning the char), and the legacy **positional list**. The
+converter now accepts all three and no longer crashes on any of them.
+
+### 8.3 What this says the port still has to implement
+
+This is the honest part. The port currently acts on three event types:
+
+| id | Event | Port behaviour |
+|---|---|---|
+| 1 | `FocusCamera` | `g_tut_cam_focus = (value != 0)` |
+| 2 | `ZoomCamera` | `g_tut_zoom_to = (value & 0xFFFF) / 1000` |
+| 4 | `ScrollSpeed` | `g_tut_scroll_to = (value & 0xFFFF) / 1000` |
+
+Everything else converts with an id and is ignored. Specifically:
+
+- **`FocusCamera` carries more than a boolean.** 528 of the 664 also have `x`,
+  `y`, `duration`, `ease` and `easeDir` -- a camera that moves to a point over
+  time. The port only switches focus between the two characters.
+- **`SetCameraBop` (105 events)** overrides the beat bop. The port hardcodes
+  `TUT_BOP_INTENSITY 1.015` from the step counter, which is the *default* the
+  events replace.
+- **`SetHealthIcon` (15 events)** swaps the health icon. The port's HUD has
+  icons but nothing drives the swap.
+- **The 84 `sserafim*` events** come from that week's `.hxc` scripts. The plan
+  already anticipated this ("scripts `.hxc` interpretados"); it needs a small
+  interpreter, not a table.
+- **`PlayAnimation` (32 events)** is currently redundant: the port derives the
+  sing animations from note hits, which happens to agree for the Tutorial but
+  is not the same mechanism.
+
+### 8.4 The FCH3 event record cannot carry these faithfully
+
+An event is 16 bytes: `sample | type | value | order`, with `value` a single
+u32. That holds one fixed-point parameter plus a duration. It cannot hold
+`{intensity, offset, rate}`, `{anim, force, target}` or `{char, flipX, id}`.
+
+So the conversion today is lossy for exactly those events, and pretending
+otherwise would be worse than saying so. Carrying them properly means an FCH3
+v4 with a wider event record (two value words, or a small parameter block).
+That is a format change to a container the port already loads on hardware, so
+it is a decision to take deliberately rather than something to slip in -- and
+it is the next real piece of work, not a footnote.

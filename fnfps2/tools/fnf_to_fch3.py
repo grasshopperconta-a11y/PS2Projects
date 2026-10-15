@@ -60,8 +60,12 @@ DEFAULT_DIFFICULTY = "normal"
 #   type 4 -> g_tut_scroll_to = (value & 0xFFFF) / 1000
 # The earlier table had ChangeCharacter on 2 and AltIdleAnimation on 4, and no
 # ZoomCamera or ScrollSpeed at all -- so converting a real v2 chart produced an
-# UNKNOWN event where the port expected the zoom, and the camera simply never
-# moved. Fixed to match the loader.
+# UNKNOWN event where the port expected the zoom, and the camera never moved.
+#
+# The ids from 7 up come from the event inventory of all 27 shipped charts (see
+# docs/SOURCE_ANALYSIS_0.2.105.md section 8). They are assigned here so the
+# port can tell them apart; which of them it actually implements is a separate
+# question, and one this file does not answer.
 EVENT_TYPES = {
     "FocusCamera": 1,
     "ZoomCamera": 2,
@@ -69,21 +73,127 @@ EVENT_TYPES = {
     "ScrollSpeed": 4,
     "ChangeCharacter": 5,
     "AltIdleAnimation": 6,
+    "SetCameraBop": 7,
+    "SetHealthIcon": 8,
 }
+
+# The sserafim week's songs are scripted: their .hxc files emit their own event
+# names. They get ids in their own block so they can never collide with a
+# base-game id, and so a future interpreter can dispatch on the range.
+EVENT_TYPE_SCRIPTED = 0x0100
+SCRIPTED_EVENT_IDS = {}
+
 EVENT_TYPE_UNKNOWN = 0xFFFF
 
-# FCH3 packs an event's parameter in one u32: the fixed-point value in the low
-# 16 bits and the duration (in chart steps) in the high 16. The loader reads
-# only the low half today, so the high half is spare room that costs nothing
-# and lets the port honour per-song durations later.
-FIXED_SCALE = 1000          # zoom/scroll are stored x1000, as main.c expects
+# FCH3 packs an event's parameter in one u32: the primary value in the low 16
+# bits and the duration (in chart steps) in the high 16. The loader reads only
+# the low half today, so the high half is spare room that costs nothing and
+# lets the port honour per-song durations later.
+FIXED_SCALE = 1000          # zoom/scroll/intensity are stored x1000
+
+# Which field of each event's dict is the primary one, and how to read it.
+# "fixed" means x1000 as a float; "int" means a plain integer; "bool" 0/1.
+# Anything not listed packs 0 and is reported, rather than guessed at.
+EVENT_PRIMARY = {
+    "FocusCamera": ("char", "int"),
+    "ZoomCamera": ("zoom", "fixed"),
+    "ScrollSpeed": ("scroll", "fixed"),
+    "SetCameraBop": ("intensity", "fixed"),
+    "SetHealthIcon": ("char", "int"),
+    "PlayAnimation": (None, "none"),
+    "ChangeCharacter": ("char", "int"),
+    "AltIdleAnimation": (None, "none"),
+    "sserafimSing": ("singing", "bool"),
+    "sserafimShow": ("visible", "bool"),
+    "sserafimCover": ("visible", "bool"),
+    "sserafimDark": ("amount", "fixed"),
+    "sserafimLights": ("amount", "fixed"),
+    "sserafimFlash": ("duration", "int"),
+    "sserafimGuitarVibration": ("duration", "int"),
+    "sserafimKick": ("final", "bool"),
+    "sserafimBeautiful": ("beautiful", "bool"),
+}
+
+
+def event_type_id(name):
+    """Stable id for an event name, assigning scripted names on first sight."""
+    if name in EVENT_TYPES:
+        return EVENT_TYPES[name]
+    if name in SCRIPTED_EVENT_IDS:
+        return SCRIPTED_EVENT_IDS[name]
+    if name.startswith("sserafim") or name[0].islower() or name[0] == "_":
+        # A script-authored event. Give it a deterministic id in the scripted
+        # block, ordered by first appearance, so a re-run is reproducible.
+        nid = EVENT_TYPE_SCRIPTED + len(SCRIPTED_EVENT_IDS)
+        SCRIPTED_EVENT_IDS[name] = nid
+        return nid
+    return EVENT_TYPE_UNKNOWN
 
 
 def pack_event_value(fixed_value, duration_steps=0):
-    """(fixed_value, duration_steps) -> the u32 the loader decodes."""
+    """(primary value, duration in steps) -> the u32 the loader decodes."""
     v = int(round(fixed_value)) & 0xFFFF
     d = int(round(duration_steps)) & 0xFFFF
     return (d << 16) | v
+
+
+def _as_number(x):
+    """Accept the shapes the charts actually use for a scalar field."""
+    if isinstance(x, bool):
+        return 1 if x else 0
+    if isinstance(x, (int, float)):
+        return x
+    if isinstance(x, str):
+        # "true"/"false" and plain numbers both turn up in the wild
+        low = x.strip().lower()
+        if low in ("true", "yes", "on"):
+            return 1
+        if low in ("false", "no", "off", ""):
+            return 0
+        try:
+            return float(x)
+        except ValueError:
+            return None
+    return None
+
+
+def _event_value(name, v):
+    """Encode one event's parameters into the u32 value field.
+
+    The charts use three shapes for `v`:
+      * a dict of named parameters (the documented v2 form)
+      * a bare int, which older charts use for FocusCamera to mean the char
+      * a list, the legacy positional form
+    Only the primary parameter survives; the rest is dropped, because FCH3 v3
+    gives an event a single u32. That is a real limitation, recorded in
+    section 8 of the analysis rather than papered over.
+    """
+    if isinstance(v, dict):
+        key, kind = EVENT_PRIMARY.get(name, (None, "none"))
+        dur = _as_number(v.get("duration", 0)) or 0
+        if key is None:
+            return 0
+        raw = _as_number(v.get(key))
+        if raw is None:
+            return 0
+        if kind == "fixed":
+            return pack_event_value(float(raw) * FIXED_SCALE, dur)
+        return pack_event_value(raw, dur)
+    if isinstance(v, bool):
+        return pack_event_value(1 if v else 0)
+    if isinstance(v, (int, float)):
+        # bare int: FocusCamera's char, or a plain flag
+        return pack_event_value(v)
+    if isinstance(v, (list, tuple)):
+        packed = 0
+        for i, x in enumerate(list(v)[:2]):
+            n = _as_number(x)
+            if n is None:
+                continue
+            packed |= (int(n) & 0xFFFF) << (16 * i)
+        return packed
+    return 0
+
 
 MAGIC = b"FCH3"
 VERSION = 3
@@ -259,42 +369,22 @@ def _v2_events(chart, scroll_speed=1.0):
     for e in chart.get("events", []) or []:
         t = float(e.get("t", e.get("time", 0.0)))
         name = e.get("e", e.get("event", ""))
-        v = e.get("v", e.get("values", {})) or {}
+        v = e.get("v", e.get("values", {}))
+        if v is None:
+            v = {}
 
-        if isinstance(v, dict):
-            dur = v.get("duration", 0) or 0
-            if name == "FocusCamera":
-                # FocusCameraSongEvent.hx: char 0 = BF, 1 = opponent.
-                packed = pack_event_value(v.get("char", 0) or 0)
-            elif name == "ZoomCamera":
-                # ZoomCameraSongEvent.hx DEFAULT_MODE is 'direct', and the
-                # charts carry no "mode", so targetZoom = zoom *
-                # FlxCamera.defaultZoom (= 1.0). The port does NOT fold in the
-                # stage's cameraZoom; main.c documents this and it is proven
-                # on hardware.
-                packed = pack_event_value((v.get("zoom", 1.0) or 1.0) * FIXED_SCALE, dur)
-            elif name == "ScrollSpeed":
-                # ScrollSpeedEvent.hx: absolute false -> scroll * chart.scrollSpeed.
-                scroll = v.get("scroll", 1.0)
-                scroll = 1.0 if scroll is None else float(scroll)
-                if not v.get("absolute", False):
-                    scroll = scroll * scroll_speed
-                packed = pack_event_value(scroll * FIXED_SCALE, dur)
-            elif name == "PlayAnimation":
-                # The port drives the sing animations off note hits, not off
-                # this event, so only the id is needed. Still emitted so the
-                # event stream stays complete and telemetry can see it.
-                packed = 0
-            else:
-                packed = 0
+        if name == "ScrollSpeed" and isinstance(v, dict):
+            # ScrollSpeedEvent.hx: absolute false -> scroll * chart.scrollSpeed.
+            # Handled here rather than in _event_value because it needs the
+            # difficulty's scrollSpeed, which only the caller knows.
+            scroll = _as_number(v.get("scroll", 1.0))
+            scroll = 1.0 if scroll is None else float(scroll)
+            if not v.get("absolute", False):
+                scroll = scroll * scroll_speed
+            dur = _as_number(v.get("duration", 0)) or 0
+            packed = pack_event_value(scroll * FIXED_SCALE, dur)
         else:
-            # legacy positional form [v1, v2, ...]
-            packed = 0
-            for i, x in enumerate(list(v)[:2]):
-                try:
-                    packed |= (int(x) & 0xFFFF) << (16 * i)
-                except (TypeError, ValueError):
-                    pass
+            packed = _event_value(name, v)
         out.append((t, name, packed))
     return out
 
@@ -367,8 +457,10 @@ def build_fch3(notes_ms, time_changes, events, sections_ms=None,
     # ---- events ------------------------------------------------------------
     evs = []
     for t, name, value in events:
-        etype = EVENT_TYPES.get(name, EVENT_TYPE_UNKNOWN)
+        etype = event_type_id(name)
         evs.append((timeline.sample_at_ms(t), etype, int(value) & 0xFFFFFFFF))
+    for _s, _t, _v in evs:
+        assert _t != 0, "the loader rejects an event whose type is 0"
     evs.sort(key=lambda e: e[0])
 
     # ---- song end ----------------------------------------------------------

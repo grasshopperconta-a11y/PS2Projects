@@ -33,23 +33,41 @@ echo "== chart converter =="
 python3 tools/fnf_to_fch3.py --selftest
 echo
 
-# The converter's own selftest uses synthetic charts, which is how the two bugs
-# below survived for so long. This converts a REAL chart and loads it with the
-# REAL loader, so the two halves of the pipeline are checked against each other.
-echo "== real chart -> FCH3 -> real loader =="
-for diff in easy normal hard; do
-    python3 tools/fnf_to_fch3.py \
-        --metadata assets-data/songs/tutorial-metadata.json \
-        --chart assets-data/charts/tutorial-chart.json \
-        --difficulty "$diff" -o "/tmp/tutorial-$diff.chart" >/dev/null
+# The converter's own selftest uses synthetic charts, which is how two bugs
+# survived for so long. This converts the REAL charts and loads them with the
+# REAL loader, so the two halves of the pipeline are checked against each
+# other and against the game's own data.
+echo "== real charts -> FCH3 -> real loader =="
+mkdir -p build/charts
+for f in assets-data/charts/*-chart.json; do
+    sid=$(basename "$f" -chart.json)
+    for diff in easy normal hard; do
+        python3 tools/fnf_to_fch3.py \
+            --metadata "assets-data/songs/$sid-metadata.json" \
+            --chart "$f" \
+            --difficulty "$diff" -o "build/charts/$sid-$diff.chart" >/dev/null
+    done
+done
+$CC $FLAGS test/test_chart_limits.c -o /tmp/fnf_test_chart_limits
+/tmp/fnf_test_chart_limits build/charts
+echo
+
+for f in build/charts/*.chart; do
+    base=$(basename "$f" .chart)
+    sid=${base%-*}
+    diff=${base##*-}
     # the expected note count comes from the JSON itself, not from the test
     want=$(python3 -c "
-import json,sys
-d=json.load(open('assets-data/charts/tutorial-chart.json'))
-print(len(d['notes']['$diff']))")
-    printf '  %-7s ' "$diff:"
-    /tmp/fnf_test_real_chart "/tmp/tutorial-$diff.chart" "$want" | tail -1
+import json
+d = json.load(open('assets-data/charts/$sid-chart.json'))
+print(len(d['notes'].get('$diff', [])))")
+    if ! /tmp/fnf_test_real_chart "$f" "$want" "$sid" >/dev/null 2>&1; then
+        echo "  FAIL: $base"
+        /tmp/fnf_test_real_chart "$f" "$want" "$sid" || true
+        exit 1
+    fi
 done
+echo "  all $(ls build/charts | wc -l) charts load in the real loader"
 echo
 
 echo "ALL SUITES PASSED"
