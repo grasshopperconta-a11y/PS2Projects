@@ -50,7 +50,17 @@ static void make_layout(const char *root)
             snprintf(cmd, sizeof(cmd),
                      "cp 'build/charts/%s-%s.chart' '%s/songs/%s/%s.chart' 2>/dev/null",
                      ids[i], diffs[d], root, ids[i], diffs[d]);
-            (void)system(cmd);
+            /* A cast to void used to sit in front of this call. That does not
+             * silence warn_unused_result -- it only silences -Wunused-value --
+             * so on a glibc that marks system() __wur the build dies under
+             * -Werror, with an error about this line and nothing about the
+             * real problem. Check the value, and say which chart went missing.
+             * (The wording avoids naming the cast so the suite's own grep for
+             * discarded return values does not trip over this comment.) */
+            if (system(cmd) != 0) {
+                printf("  FAIL could not stage %s-%s.chart\n", ids[i], diffs[d]);
+                failures++;
+            }
         }
     }
 }

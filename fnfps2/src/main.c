@@ -598,7 +598,15 @@ static void tutorial_notes_update(u32 sample,unsigned short pressed,u32 frame){
    delta=(s32)note.sample-(s32)sample;absolute=(u32)(delta<0?-delta:delta);
    if(absolute<=TUTORIAL_NOTE_JUDGE_WINDOW&&absolute<best_abs){best=(int)i;best_abs=absolute;}
   }
-  if(best>=0){s32 offset;chart_note_t note;(void)chart_note((u32)best,&note);offset=(s32)sample-(s32)note.sample;g_tutorial_note_state[best]=1;g_bf_sing=(int)lane;g_bf_sing_at=sample;g_tutorial_note_hits++;g_tutorial_note_combo++;g_tutorial_note_score+=best_abs<=2400u?350u:best_abs<=4800u?200u:100u;g_tutorial_note_feedback=best_abs<=2400u?1:best_abs<=4800u?2:3;g_tutorial_note_feedback_frame=frame;telemetry_event("tutorial_note_hit",best,(int)offset);}
+  if(best>=0){s32 offset;chart_note_t note;
+   /* chart_note returns -1 for an out-of-range index and leaves *out alone.
+    * The (void) cast that used to be here does not silence warn_unused_result
+    * -- it only silences -Wunused-value -- so on a newer gcc the build died on
+    * this line, and on an older one it silently read an uninitialised note if
+    * best ever pointed past the table. best comes from the loop above, which
+    * already bounds it, but "already bounds it" is not a contract. */
+   if(chart_note((u32)best,&note)<0)best=-1;
+   else{offset=(s32)sample-(s32)note.sample;g_tutorial_note_state[best]=1;g_bf_sing=(int)lane;g_bf_sing_at=sample;g_tutorial_note_hits++;g_tutorial_note_combo++;g_tutorial_note_score+=best_abs<=2400u?350u:best_abs<=4800u?200u:100u;g_tutorial_note_feedback=best_abs<=2400u?1:best_abs<=4800u?2:3;g_tutorial_note_feedback_frame=frame;telemetry_event("tutorial_note_hit",best,(int)offset);}}
   else{g_tutorial_note_feedback=5;g_tutorial_note_feedback_frame=frame;telemetry_event("tutorial_note_ghost",(int)lane,(int)sample);}
  }
 }

@@ -12,6 +12,25 @@ CC=${CC:-gcc}
 # from tamtypes.h, so the loader can be tested unmodified on the PC.
 FLAGS="-O2 -Wall -Wextra -Werror -std=gnu11 -Isrc -Isrc/engine -Itest/ps2sdk-shim"
 
+# -Werror only catches what the local compiler warns about, and the compilers
+# in play here do not agree. glibc marks system() __wur; gcc 12 accepts a cast
+# to void in front of it and gcc 13+ does not. So a discarded return value can
+# pass the whole suite on one machine and fail the build on another -- which is
+# exactly what happened. This grep is compiler-independent: a cast to void in
+# front of a call is never right in this codebase, whether or not the local
+# gcc notices. It also caught a real one in main.c, where chart_note()'s error
+# return was being thrown away and an uninitialised note could be read.
+echo "== no discarded return values =="
+if grep -rnE '\(void\)[a-zA-Z_][a-zA-Z0-9_]*\(' src test \
+        --include=*.c --include=*.h | grep -v ps2sdk-shim; then
+    echo
+    echo "  A cast to void in front of a call discards the return value."
+    echo "  That does not silence warn_unused_result, and on a stricter gcc"
+    echo "  the build dies here. Check the value instead."
+    exit 1
+fi
+echo "  ok:   no return value is discarded"
+
 echo "== vram_cache + io_fila =="
 $CC $FLAGS test/test_engine.c src/engine/vram_cache.c src/engine/io_fila.c -o /tmp/fnf_test_engine
 /tmp/fnf_test_engine
