@@ -1,0 +1,5 @@
+FNF PS2 0.2.47 OFFICIAL STORY BOPPER TIMING
+Baseline: hardware-tested 0.2.46.
+Official v0.8.6 Bopper behavior: danceEvery=2 triggers once every 8 steps; animation data defaults looped=false; dance(forceRestart=shouldBop) plays one animation once, then the final frame remains until the next two-beat trigger.
+m46 still looped BF continuously at 24 fps, causing the observed acceleration. m47 drives both characters from the same heard freakyMenu sample clock at 102 BPM. BF plays frames 0..13 once then holds frame 13. GF plays the selected 15-frame left/right animation once then holds frame 14 of that animation. GF alternation and official numeric suffix mapping are preserved.
+Tutorial Circle return is hardware-confirmed working in m46. Temporary BACK capture checkpoints met their removal condition and are physically removed; the corrected single transport shutdown path remains.
