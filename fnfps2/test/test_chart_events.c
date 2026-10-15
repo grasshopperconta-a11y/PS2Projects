@@ -17,7 +17,7 @@
 #include <string.h>
 
 #include "chart_events.h"
-#include "tutorial_chart.h"
+#include "chart.h"
 
 static int failures = 0;
 static int checks = 0;
@@ -42,11 +42,11 @@ static void near(float a, float b, const char *what)
     }
 }
 
-static tutorial_chart_info_t g_info;
+static chart_info_t g_info;
 
 static void load(const char *path)
 {
-    int r = tutorial_chart_load(path, &g_info);
+    int r = chart_load(path, &g_info);
     chart_events_bind(&g_info);
     checks++;
     if (r != 0) {
@@ -236,7 +236,7 @@ int main(void)
         u32 i;
         int seen = 0;
         for (i = 0; i < g_info.event_count; i++) {
-            const tutorial_chart_event_t *e = tutorial_chart_event(i);
+            const chart_event_t *e = chart_event(i);
             if (e && e->type == CHART_EV_SET_CAMERA_BOP) {
                 chart_events_pump(e->sample);
                 seen++;
@@ -277,7 +277,7 @@ int main(void)
         u32 i;
         int icons = 0, named = 0;
         for (i = 0; i < g_info.event_count; i++) {
-            const tutorial_chart_event_t *e = tutorial_chart_event(i);
+            const chart_event_t *e = chart_event(i);
             if (e && e->type == CHART_EV_SET_HEALTH_ICON) {
                 chart_events_pump(e->sample);
                 icons++;
@@ -311,16 +311,16 @@ int main(void)
         static const float g_official_mainstage_camera_zoom = 1.1f;   /* main.c:747 */
         u32 music_clock = 0;                                          /* main.c:1137 */
         u32 g_tutorial_chart_cursor = 0;
-        const tutorial_chart_event_t *event = 0;
+        const chart_event_t *event = 0;
         static float g_tut_zoom, g_tut_scroll, g_tut_bop;
         static int g_tut_cam_focus;
-        static tutorial_chart_info_t g_tutorial_chart_info;
+        static chart_info_t g_tutorial_chart_info;
         u32 aref = 0;
         int at = -1, af2 = 0;
 
         /* the pump: main.c walks the chart itself and applies one at a time */
         while (g_tutorial_chart_cursor < g_info.event_count) {
-            event = tutorial_chart_event(g_tutorial_chart_cursor);
+            event = chart_event(g_tutorial_chart_cursor);
             if (!event || event->sample > music_clock) break;
             chart_events_apply(event);
             g_tutorial_chart_cursor++;

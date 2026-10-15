@@ -1,7 +1,15 @@
-#ifndef TUTORIAL_CHART_H
-#define TUTORIAL_CHART_H
+#ifndef FNF_CHART_H
+#define FNF_CHART_H
 
 #include <tamtypes.h>
+
+/* chart_load_song() takes a registry entry, so this file includes the
+   registry. That is the one dependency the chart layer has, and it is a cheap
+   one: the registry is generated data plus path helpers, with no console or
+   filesystem dependency of its own. Keeping it here means a caller that has a
+   song does not have to assemble the path itself, which is how the port ended
+   up hardcoding "mass:/FNFPS2/assets/test.chart" in the first place. */
+#include "song_registry.h"
 
 typedef struct {
     u32 note_count;
@@ -14,7 +22,7 @@ typedef struct {
     u32 version;         /* 3 or 4 */
     u32 string_count;    /* v4 only, 0 for v3 */
     u32 block_count;     /* v4 only, 0 for v3 */
-} tutorial_chart_info_t;
+} chart_info_t;
 
 /* One chart event, carrying both formats' fields.
  *
@@ -37,7 +45,7 @@ typedef struct {
     u32 ref;             /* v4: string or block index, 0xFFFFFFFF when unused */
     u32 value;           /* v3: the packed u32 */
     u32 order;           /* v3 only; v4 drops it because it always equalled the index */
-} tutorial_chart_event_t;
+} chart_event_t;
 
 /* v4 flag bits in an event's `b` word. Keep in step with the converter. */
 #define CHART_B_EASE_MASK   0x0000FFFFu
@@ -68,7 +76,7 @@ const unsigned char *chart_event_block(u32 index,u32 *length);
  * -5, which is what happened to 2hot-hard (1.035 notes) until 0.2.105 raised
  * the note limit from 1.024 to 1.280. test/test_chart_limits.c asserts these
  * against every converted chart, so lowering one fails loudly instead of
- * silently dropping a song. Keep TUTORIAL_MAX_NOTES in main.c in step with
+ * silently dropping a song. Keep the note-state array in main.c in step with
  * CHART_MAX_NOTES. */
 #define CHART_MAX_NOTES 1280u
 #define CHART_MAX_BPMS 16u
@@ -81,11 +89,25 @@ typedef struct {
     u8 lane;
     u8 must_press;
     u16 order;
-} tutorial_chart_note_t;
+} chart_note_t;
 
-int tutorial_chart_load(const char *path, tutorial_chart_info_t *info);
-int tutorial_chart_note(u32 index, tutorial_chart_note_t *out);
-const tutorial_chart_event_t *tutorial_chart_event(u32 index);
-u32 tutorial_chart_step_at(u32 sample);
+int chart_load(const char *path, chart_info_t *info);
+
+/*
+ * Load a song's chart by its registry entry, resolving the path the way the
+ * game lays its assets out: "<root>/songs/<id>/<difficulty>.chart".
+ *
+ * difficulty is "easy", "normal" or "hard". The port's asset root is whatever
+ * mass:/ path the build installs to; the registry does not know it, which is
+ * why it is a parameter.
+ *
+ * Returns chart_load()'s result, or -1 when an argument is missing and -2 when
+ * the path would not fit the buffer.
+ */
+int chart_load_song(const char *root, const sr_song_t *song,
+                    const char *difficulty, chart_info_t *info);
+int chart_note(u32 index, chart_note_t *out);
+const chart_event_t *chart_event(u32 index);
+u32 chart_step_at(u32 sample);
 
 #endif

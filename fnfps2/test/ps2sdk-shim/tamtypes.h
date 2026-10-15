@@ -1,6 +1,6 @@
 /* Minimal stand-in for ps2sdk's <tamtypes.h>, for PC-side testing only.
  *
- * tutorial_chart.c is otherwise pure POSIX C (open/read/close/lseek/memset),
+ * chart.c is otherwise pure POSIX C (open/read/close/lseek/memset),
  * so the only thing keeping it off the PC is the u8/u16/u32 typedefs. Rather
  * than fork the loader or #ifdef it, this directory is put on the include
  * path for the offline tests and supplies those four typedefs. Nothing in

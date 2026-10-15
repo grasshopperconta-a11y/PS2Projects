@@ -16,7 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "tutorial_chart.h"
+#include "chart.h"
 
 static int fails = 0;
 static void ck(int c, const char *what)

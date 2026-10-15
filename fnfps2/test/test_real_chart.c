@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "tutorial_chart.h"
+#include "chart.h"
 
 static int fails = 0;
 static void ck(int c, const char *what)
@@ -25,7 +25,7 @@ static void ck(int c, const char *what)
 
 int main(int argc, char **argv)
 {
-    tutorial_chart_info_t info;
+    chart_info_t info;
     const char *song = argc >= 4 ? argv[3] : "";
     int is_tutorial = strcmp(song, "tutorial") == 0;
     long want;
@@ -37,7 +37,7 @@ int main(int argc, char **argv)
     }
     want = strtol(argv[2], NULL, 10);
 
-    rc = tutorial_chart_load(argv[1], &info);
+    rc = chart_load(argv[1], &info);
     if (rc != 0) printf("  loader returned %d\n", rc);
     ck(rc == 0, "the real loader accepts the converted chart");
     if (rc != 0) return 1;
@@ -58,8 +58,8 @@ int main(int argc, char **argv)
     int ordered = 1, lanes_ok = 1, press_ok = 1, order_ok = 1, inside = 1;
     u32 prev = 0;
     for (u32 i = 0; i < info.note_count; i++) {
-        tutorial_chart_note_t n;
-        if (tutorial_chart_note(i, &n) != 0) { ordered = 0; break; }
+        chart_note_t n;
+        if (chart_note(i, &n) != 0) { ordered = 0; break; }
         if (n.lane > 3) lanes_ok = 0;
         if (n.must_press > 1) press_ok = 0;
         if (n.order != i) order_ok = 0;
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
     int ev_order_ok = 1, ev_type_ok = 1, ev_sorted = 1, ev_inside = 1;
     u32 ev_prev = 0;
     for (u32 i = 0; i < info.event_count; i++) {
-        const tutorial_chart_event_t *e = tutorial_chart_event(i);
+        const chart_event_t *e = chart_event(i);
         if (!e) { ev_order_ok = 0; continue; }
         /* v4 dropped the order field: it always had to equal the index, so it
            carried no information. Only v3 files have it to check. */
@@ -102,14 +102,14 @@ int main(int argc, char **argv)
         ck(info.initial_bpm == 100, "opening bpm is 100");
 
         /* the first note is the opponent's left at 9600 ms = 460800 samples */
-        tutorial_chart_note_t n;
-        ck(tutorial_chart_note(0, &n) == 0, "note 0 readable");
+        chart_note_t n;
+        ck(chart_note(0, &n) == 0, "note 0 readable");
         ck(n.sample == 460800 && n.lane == 0 && n.must_press == 0,
            "note 0 is the opponent's left at 460800 samples");
 
         int focus = 0, zoom = 0, scroll = 0, anim = 0;
         for (u32 i = 0; i < info.event_count; i++) {
-            const tutorial_chart_event_t *e = tutorial_chart_event(i);
+            const chart_event_t *e = chart_event(i);
             if (!e) continue;
             if (e->type == 1) focus++;
             else if (e->type == 2) zoom++;
@@ -130,7 +130,7 @@ int main(int argc, char **argv)
            puts the duration in p0 and the actual value in p1). */
         float zoom_to = 0.0f, scroll_to = 0.0f;
         for (u32 i = 0; i < info.event_count; i++) {
-            const tutorial_chart_event_t *e = tutorial_chart_event(i);
+            const chart_event_t *e = chart_event(i);
             u32 raw = info.version == 4u ? e->p1 : (e->value & 0xFFFFu);
             if (e->type == 2 && zoom_to == 0.0f)
                 zoom_to = (float)raw / 1000.0f;
@@ -142,7 +142,7 @@ int main(int argc, char **argv)
     }
 
     /* a bad path must fail, not crash */
-    ck(tutorial_chart_load("/nonexistent/x.chart", &info) != 0,
+    ck(chart_load("/nonexistent/x.chart", &info) != 0,
        "a missing file fails cleanly");
 
     printf("  %s\n", fails ? "FAILED" : "ok");

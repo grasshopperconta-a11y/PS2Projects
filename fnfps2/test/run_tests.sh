@@ -69,7 +69,7 @@ for f in assets-data/charts/*-chart.json; do
 done
 
 echo "-- FCH4 --"
-$CC $FLAGS test/test_chart_limits.c -o /tmp/fnf_test_chart_limits
+$CC $FLAGS test/test_chart_limits.c src/chart.c src/engine/song_registry.c -o /tmp/fnf_test_chart_limits
 /tmp/fnf_test_chart_limits build/charts
 echo
 
@@ -87,9 +87,20 @@ echo
 # checked against the tutorial's own 26 events plus milf's SetCameraBop and
 # spaghetti's 15 SetHealthIcon -- the only charts that have them.
 echo "== chart_events: FCH4 fields -> the original's semantics =="
-$CC $FLAGS test/test_chart_events.c src/chart_events.c src/tutorial_chart.c \
+$CC $FLAGS test/test_chart_events.c src/chart_events.c src/chart.c src/engine/song_registry.c \
     -o /tmp/fnf_test_chart_events -lm
 /tmp/fnf_test_chart_events
+echo
+
+$CC $FLAGS test/test_real_chart.c src/chart.c src/engine/song_registry.c \
+    -o /tmp/fnf_test_real_chart
+
+# The registry-driven chart path: the same code main.c takes to find a song's
+# chart, exercised against a temporary copy of the game's asset layout.
+echo "== registry-driven chart paths =="
+$CC $FLAGS test/test_chart_paths.c src/chart.c src/engine/song_registry.c \
+    -o /tmp/fnf_test_chart_paths
+/tmp/fnf_test_chart_paths
 echo
 
 for dir in build/charts build/charts-v3; do

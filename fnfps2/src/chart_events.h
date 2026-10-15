@@ -16,16 +16,15 @@
  * ref (an index into the string or block table). It owns the state those
  * events drive, so main.c only has to advance it and read the results.
  *
- * The loader is still named tutorial_chart_* -- renaming it to chart_* is a
- * separate, later step, and the event ids and field meanings are identical
- * whichever name the loader carries.
+ * The loader is chart_load() and friends; this module reads what it returns.
+ * The event ids and field meanings are the converter's, and they are shared.
  *
  * Every default below is the original's, taken from the event classes in
  * source/funkin/play/event/ and from Constants.hx. Nothing here is inferred.
  */
 
 #include "tamtypes.h"
-#include "tutorial_chart.h"
+#include "chart.h"
 
 /* Event ids. Must match tools/fnf_to_fch3.py and main.c's telemetry. */
 #define CHART_EV_FOCUS_CAMERA     1u
@@ -126,7 +125,7 @@ void chart_events_init(u32 samples_per_step);
  * so the caller hands over the one it filled. Call this after every load,
  * before pumping: it is what tells pump how many events there are.
  */
-void chart_events_bind(const tutorial_chart_info_t *info);
+void chart_events_bind(const chart_info_t *info);
 
 /*
  * Set the camera bop directly. This is what the SetCameraBop event handler
@@ -139,7 +138,7 @@ void chart_events_set_bop(float intensity, float rate, float offset);
  * means. A caller that already walks the chart itself applies events one at a
  * time and keeps its own cursor and telemetry.
  */
-void chart_events_apply(const tutorial_chart_event_t *event);
+void chart_events_apply(const chart_event_t *event);
 
 /*
  * Convenience: consume every event of the bound chart at or before `sample`, in

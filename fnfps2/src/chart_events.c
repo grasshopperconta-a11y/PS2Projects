@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-#include "tutorial_chart.h"
+#include "chart.h"
 
 /*
  * The state this module owns. Everything here is driven by chart events, and
@@ -10,7 +10,7 @@
  */
 static chart_event_state_t st;
 static u32 samples_per_step = 7200u;   /* the tutorial's, until told otherwise */
-static const tutorial_chart_info_t *bound = 0;
+static const chart_info_t *bound = 0;
 
 /* The pending PlayAnimation queue. Two can land on one sample (the tutorial
    fires 'hey' and 'cheer' together), so a single slot would drop one. */
@@ -218,7 +218,7 @@ void chart_events_init(u32 sps)
     samples_per_step = sps ? sps : 7200u;
 }
 
-void chart_events_bind(const tutorial_chart_info_t *info)
+void chart_events_bind(const chart_info_t *info)
 {
     bound = info;
 }
@@ -248,7 +248,7 @@ static float steps_to_seconds(float steps)
  * it owns the cursor and the telemetry -- applies events one at a time and
  * keeps its own bookkeeping.
  */
-void chart_events_apply(const tutorial_chart_event_t *e)
+void chart_events_apply(const chart_event_t *e)
 {
     {
         u32 ease_dir = (e->b >> 16) & 3u;
@@ -342,7 +342,7 @@ u32 chart_events_pump(u32 sample)
     u32 count = bound ? bound->event_count : 0u;
 
     while (n < count) {
-        const tutorial_chart_event_t *e = tutorial_chart_event(n);
+        const chart_event_t *e = chart_event(n);
         if (!e || e->sample > sample) break;
         chart_events_apply(e);
         n++;

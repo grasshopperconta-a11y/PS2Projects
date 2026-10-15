@@ -1,4 +1,4 @@
-#include "tutorial_chart.h"
+#include "chart.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
@@ -41,8 +41,8 @@ static unsigned char chart_tables[CHART_MAX_STRING_BYTES+CHART_MAX_BLOCK_BYTES];
 static u32 chart_block_lengths[CHART_MAX_STRINGS];
 static u32 chart_block_offsets[CHART_MAX_STRINGS];
 static chart_bpm_t chart_bpms[CHART_MAX_BPMS];
-static tutorial_chart_event_t chart_events[CHART_MAX_EVENTS];
-static tutorial_chart_info_t chart_info;
+static chart_event_t chart_events[CHART_MAX_EVENTS];
+static chart_info_t chart_info;
 
 static u16 chart_u16(const unsigned char *p){return (u16)((u16)p[0]|((u16)p[1]<<8));}
 static u32 chart_u32(const unsigned char *p){return (u32)p[0]|((u32)p[1]<<8)|((u32)p[2]<<16)|((u32)p[3]<<24);}
@@ -66,7 +66,7 @@ static u32 string_bytes_of(const unsigned char*base,u32 count,u32 limit){
 
 static int read_exact(int fd,unsigned char *dst,u32 bytes){u32 done=0;while(done<bytes){int n=read(fd,dst+done,(int)(bytes-done));if(n<=0)return -1;done+=(u32)n;}return 0;}
 
-int tutorial_chart_load(const char *path,tutorial_chart_info_t *out){
+int chart_load(const char *path,chart_info_t *out){
  unsigned char header[CHART_HEADER_BYTES_V4];u32 notes,bpms,sections,events,end,payload_bytes,tail_bytes,checksum,off,i,version,ev_stride,header_bytes,string_count,block_count,cursor,k;int fd,file_bytes;
  static const char magic3[4]={'F','C','H','3'},magic4[4]={'F','C','H','4'};
  memset(&chart_info,0,sizeof(chart_info));
@@ -137,7 +137,7 @@ int tutorial_chart_load(const char *path,tutorial_chart_info_t *out){
  if(chart_u32(chart_payload+off)!=0)return -13;
  off+=sections*8u;
  for(i=0;i<events;i++){
-  const unsigned char*r=chart_payload+off+i*ev_stride;tutorial_chart_event_t*e=&chart_events[i];
+  const unsigned char*r=chart_payload+off+i*ev_stride;chart_event_t*e=&chart_events[i];
   memset(e,0,sizeof(*e));
   e->sample=chart_u32(r);e->type=chart_u32(r+4);
   if(version==3u){e->value=chart_u32(r+8);e->order=chart_u32(r+12);}
@@ -166,7 +166,7 @@ const unsigned char *chart_event_block(u32 index,u32 *length){
  return chart_tables+chart_block_offsets[index];
 }
 
-int tutorial_chart_note(u32 index,tutorial_chart_note_t*out){
+int chart_note(u32 index,chart_note_t*out){
  const unsigned char*r;
  if(!out||index>=chart_info.note_count)return -1;
  r=chart_payload+index*12u;
@@ -178,5 +178,16 @@ int tutorial_chart_note(u32 index,tutorial_chart_note_t*out){
  return 0;
 }
 
-const tutorial_chart_event_t *tutorial_chart_event(u32 index){return index<chart_info.event_count?&chart_events[index]:0;}
-u32 tutorial_chart_step_at(u32 sample){u32 i=0;while(i+1u<chart_info.bpm_count&&sample>=chart_bpms[i+1u].start_sample)i++;return chart_info.bpm_count?chart_bpms[i].start_step+(sample-chart_bpms[i].start_sample)/chart_bpms[i].samples_per_step:0;}
+const chart_event_t *chart_event(u32 index){return index<chart_info.event_count?&chart_events[index]:0;}
+u32 chart_step_at(u32 sample){u32 i=0;while(i+1u<chart_info.bpm_count&&sample>=chart_bpms[i+1u].start_sample)i++;return chart_info.bpm_count?chart_bpms[i].start_step+(sample-chart_bpms[i].start_sample)/chart_bpms[i].samples_per_step:0;}
+
+int chart_load_song(const char *root, const sr_song_t *song,
+                    const char *difficulty, chart_info_t *info)
+{
+    char path[160];
+    int n;
+    if (!root || !song || !difficulty || !info) return -1;
+    n = sr_chart_path(path, sizeof(path), root, song, difficulty);
+    if (n < 0 || (unsigned int)n >= sizeof(path)) return -2;
+    return chart_load(path, info);
+}

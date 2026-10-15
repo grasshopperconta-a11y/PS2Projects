@@ -928,3 +928,46 @@ gameplay raises the stage budget from 269,480 B to 1,339,368 B, which brings
 stage's gap. `vram_cache` and `io_fila` already exist to do this, which is
 presumably what the port's own Phase 0 intended: stream the visible part of the
 backdrop and let the LRU evict what the camera has left behind.
+
+### 10.6 The chart layer is no longer the tutorial's
+
+`src/tutorial_chart.c|h` became `src/chart.c|h`, and the API with it:
+`chart_load()`, `chart_note()`, `chart_event()`, `chart_step_at()`, and the
+types `chart_info_t` / `chart_event_t` / `chart_note_t`. The FCH3 and FCH4
+formats, the loader's validation and its capacity contract are unchanged -- this
+was a rename, not a rewrite, and all 81 charts still load in both formats.
+
+What the rename buys is the ability to say what the module is for. It loads *a*
+chart, and the port plays *the tutorial*, so main.c's own per-song state became
+`g_chart_*` rather than `g_tutorial_chart_*`, and the note-state array's bound
+became `CHART_MAX_NOTE_STATES`.
+
+`chart_load_song(root, song, difficulty, info)` resolves the path through the
+registry: `<root>/songs/<id>/<difficulty>.chart`, which is where the game keeps
+it. That replaced a hardcoded `"mass:/FNFPS2/assets/test.chart"` -- the port had
+a registry compiled into it and was not using it to find anything, which is the
+SongRegistry data-flow defect the port plan listed. `src/chart.c` now includes
+`song_registry.h`; that is the chart layer's one dependency, and it is a cheap
+one, since the registry is generated data plus path helpers with no filesystem
+dependency of its own.
+
+`test/test_chart_paths.c` builds the game's asset layout under a temporary
+directory and loads through it, so the registry's idea of where a chart lives is
+checked against where the converter actually puts one. It also checks the
+failure paths: an unknown difficulty, an unknown song id and every bad argument
+have to fail cleanly rather than fall back to something plausible. And it
+reproduces main.c's registry calls with the same types, since main.c itself
+cannot be compiled here.
+
+One thing this found: **`run_tests.sh` was invoking `/tmp/fnf_test_real_chart`
+without ever compiling it.** The 81-chart sweep had been reading a binary left
+over from an earlier session, so on a fresh checkout the line
+`build/charts: all 81 charts load in the real loader` was reporting a test that
+never ran. The build line is there now, and the test was proved able to fail by
+feeding it a deliberately wrong note count.
+
+What is still the tutorial's, deliberately: the scene. main.c loads
+`mainstage_tutorial_parallax.rgba`, `bf_frames.lz4f` and `gf_frames.lz4f` by
+name, and the stage texture is still the fixed 512x256 that section 10.1 says is
+wrong for every stage but the two smallest. Making the scene take a song
+descriptor is the next step, and it is a bigger one than this rename.

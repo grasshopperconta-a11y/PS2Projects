@@ -22,8 +22,9 @@
 #include "menu_generated.h"
 #include "story_generated.h"
 #include "story_titles_generated.h"
-#include "tutorial_chart.h"
+#include "chart.h"
 #include "chart_events.h"
+#include "song_registry.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -146,12 +147,17 @@ static unsigned char *g_tutorial_bf_pack=0,*g_tutorial_gf_pack=0;static u32 g_tu
 static const unsigned char *g_story_bf_pack=0,*g_story_gf_pack=0;static u32 g_story_bf_pack_bytes=0,g_story_gf_pack_bytes=0;static int g_story_bf_uploaded=-1,g_story_gf_uploaded=-1,g_story_anim_ready=0;static u32 g_story_anim_heard_samples=0;
 static unsigned char *g_story_bf_pixels=0,*g_story_gf_pixels=0;
 extern const unsigned char g_story_gf_pack_start[],g_story_gf_pack_end[],g_story_bf_pack_start[],g_story_bf_pack_end[];
-static int g_tutorial_audio_status=-1,g_tutorial_audio_finished=0,g_tutorial_chart_status=-1;
-static tutorial_chart_info_t g_tutorial_chart_info;
-static u32 g_tutorial_chart_cursor=0,g_tutorial_chart_seen=0,g_tutorial_chart_last_type=0,g_tutorial_chart_last_value=0,g_tutorial_chart_last_sample=0;
+static int g_tutorial_audio_status=-1,g_tutorial_audio_finished=0,g_chart_status=-1;
+static chart_info_t g_chart_info;
+static u32 g_chart_cursor=0,g_chart_seen=0,g_chart_last_type=0,g_chart_last_value=0,g_chart_last_sample=0;
 static int g_tutorial_note_asset_status=-1,g_tutorial_note_visible=-1,g_tutorial_note_feedback=0;
-#define TUTORIAL_MAX_NOTES 1280u /* acompanha CHART_MAX_NOTES: 2hot-HARD tem 1.035 notas */
-static unsigned char g_tutorial_note_state[TUTORIAL_MAX_NOTES];
+/* Every asset the port reads lives under this root on the memory card.
+   The registry builds paths beneath it, so a song's chart is
+   "<root>/songs/<id>/<difficulty>.chart". */
+#define FNF_ASSET_ROOT "mass:/FNFPS2/assets"
+
+#define CHART_MAX_NOTE_STATES 1280u /* acompanha CHART_MAX_NOTES: 2hot-HARD tem 1.035 notas */
+static unsigned char g_tutorial_note_state[CHART_MAX_NOTE_STATES];
 static u32 g_tutorial_note_score=0,g_tutorial_note_hits=0,g_tutorial_note_misses=0,g_tutorial_note_combo=0,g_tutorial_note_feedback_frame=0;
 
 
@@ -571,36 +577,36 @@ static unsigned short tutorial_lane_button(unsigned int lane){static const unsig
 static void tutorial_notes_reset(void){memset(g_tutorial_note_state,0,sizeof(g_tutorial_note_state));g_tutorial_note_score=0;g_tutorial_note_hits=0;g_tutorial_note_misses=0;g_tutorial_note_combo=0;g_tutorial_note_feedback=0;g_tutorial_note_feedback_frame=0;g_tutorial_note_visible=-1;}
 static void tutorial_notes_update(u32 sample,unsigned short pressed,u32 frame){
  u32 i;unsigned int lane;
- if(g_tutorial_chart_status!=0)return;
- for(i=0;i<g_tutorial_chart_info.note_count&&i<TUTORIAL_MAX_NOTES;i++){
-  tutorial_chart_note_t note;
-  if(tutorial_chart_note(i,&note)<0||!note.must_press||g_tutorial_note_state[i])continue;
+ if(g_chart_status!=0)return;
+ for(i=0;i<g_chart_info.note_count&&i<CHART_MAX_NOTE_STATES;i++){
+  chart_note_t note;
+  if(chart_note(i,&note)<0||!note.must_press||g_tutorial_note_state[i])continue;
   if((s32)sample-(s32)note.sample>(s32)TUTORIAL_NOTE_LATE){g_tutorial_note_state[i]=2;g_tutorial_note_misses++;g_tutorial_note_combo=0;g_tutorial_note_feedback=4;g_tutorial_note_feedback_frame=frame;}
  }
  /* Notas do oponente: no Tutorial a GF e a oponente, pelo gf.hxc, entao
     ela canta quando a nota dela chega. Estado 3 marca "ja cantada". */
- for(i=0;i<g_tutorial_chart_info.note_count&&i<TUTORIAL_MAX_NOTES;i++){
-  tutorial_chart_note_t note;
-  if(tutorial_chart_note(i,&note)<0||note.must_press||g_tutorial_note_state[i]||note.lane>3)continue;
+ for(i=0;i<g_chart_info.note_count&&i<CHART_MAX_NOTE_STATES;i++){
+  chart_note_t note;
+  if(chart_note(i,&note)<0||note.must_press||g_tutorial_note_state[i]||note.lane>3)continue;
   if((s32)sample>=(s32)note.sample){g_tutorial_note_state[i]=3;g_gf_sing=(int)note.lane;g_gf_sing_at=sample;}
  }
  for(lane=0;lane<4;lane++)if(pressed&tutorial_lane_button(lane)){
   int best=-1;u32 best_abs=0xffffffffu;
-  for(i=0;i<g_tutorial_chart_info.note_count&&i<TUTORIAL_MAX_NOTES;i++){
-   tutorial_chart_note_t note;s32 delta;u32 absolute;
-   if(g_tutorial_note_state[i]||tutorial_chart_note(i,&note)<0||!note.must_press||note.lane!=lane)continue;
+  for(i=0;i<g_chart_info.note_count&&i<CHART_MAX_NOTE_STATES;i++){
+   chart_note_t note;s32 delta;u32 absolute;
+   if(g_tutorial_note_state[i]||chart_note(i,&note)<0||!note.must_press||note.lane!=lane)continue;
    delta=(s32)note.sample-(s32)sample;absolute=(u32)(delta<0?-delta:delta);
    if(absolute<=TUTORIAL_NOTE_JUDGE_WINDOW&&absolute<best_abs){best=(int)i;best_abs=absolute;}
   }
-  if(best>=0){s32 offset;tutorial_chart_note_t note;(void)tutorial_chart_note((u32)best,&note);offset=(s32)sample-(s32)note.sample;g_tutorial_note_state[best]=1;g_bf_sing=(int)lane;g_bf_sing_at=sample;g_tutorial_note_hits++;g_tutorial_note_combo++;g_tutorial_note_score+=best_abs<=2400u?350u:best_abs<=4800u?200u:100u;g_tutorial_note_feedback=best_abs<=2400u?1:best_abs<=4800u?2:3;g_tutorial_note_feedback_frame=frame;telemetry_event("tutorial_note_hit",best,(int)offset);}
+  if(best>=0){s32 offset;chart_note_t note;(void)chart_note((u32)best,&note);offset=(s32)sample-(s32)note.sample;g_tutorial_note_state[best]=1;g_bf_sing=(int)lane;g_bf_sing_at=sample;g_tutorial_note_hits++;g_tutorial_note_combo++;g_tutorial_note_score+=best_abs<=2400u?350u:best_abs<=4800u?200u:100u;g_tutorial_note_feedback=best_abs<=2400u?1:best_abs<=4800u?2:3;g_tutorial_note_feedback_frame=frame;telemetry_event("tutorial_note_hit",best,(int)offset);}
   else{g_tutorial_note_feedback=5;g_tutorial_note_feedback_frame=frame;telemetry_event("tutorial_note_ghost",(int)lane,(int)sample);}
  }
 }
 static float tutorial_note_y(s32 delta){return 26.3f+(float)delta*(0.45f/(48.0f*2.0f))*g_tut_scroll;}
 static qword_t *tutorial_notes_draw(qword_t*q,texbuffer_t*atlas,texbuffer_t*font,u32 sample,unsigned short held,u32 frame){
- u32 i,visible=0;unsigned int lane;if(g_tutorial_note_asset_status!=0||g_tutorial_chart_status!=0)return q;q=bind_texture_filter(q,atlas,0);
+ u32 i,visible=0;unsigned int lane;if(g_tutorial_note_asset_status!=0||g_chart_status!=0)return q;q=bind_texture_filter(q,atlas,0);
  for(lane=0;lane<4;lane++){float x=g_receptor_x[lane];q=sprite_region_alpha(q,x,g_receptor_y[lane],g_note_w[lane],g_note_h[lane],lane*56.0f,56.0f,g_note_w[lane],g_note_h[lane],128);q=sprite_region_alpha(q,x+320.0f,g_receptor_y[lane],g_note_w[lane],g_note_h[lane],lane*56.0f,56.0f,g_note_w[lane],g_note_h[lane],128);}
- for(i=0;i<g_tutorial_chart_info.note_count&&i<TUTORIAL_MAX_NOTES;i++){tutorial_chart_note_t note;s32 delta,tail_delta;float x,y,tail_y;int state;if(tutorial_chart_note(i,&note)<0||note.lane>3)continue;state=g_tutorial_note_state[i];delta=(s32)note.sample-(s32)sample;tail_delta=(s32)(note.sample+note.duration)-(s32)sample;x=g_note_x[note.lane]+(note.must_press?320.0f:0.0f);if(note.duration&&(!note.must_press||state!=2)&&tail_delta>0&&delta<(s32)TUTORIAL_NOTE_AHEAD){y=tutorial_note_y(delta);tail_y=tutorial_note_y(tail_delta);if(tail_y>y){float top=y+g_note_h[note.lane]*.28f;if(top<26.3f)top=26.3f;if(tail_y>360.0f)tail_y=360.0f;if(tail_y>top)q=rect_alpha(q,x+g_note_w[note.lane]*.39f,top,x+g_note_w[note.lane]*.61f,tail_y,224,224,240,150);}}/* As notas do oponente nunca eram retiradas: so o teste de must_press
+ for(i=0;i<g_chart_info.note_count&&i<CHART_MAX_NOTE_STATES;i++){chart_note_t note;s32 delta,tail_delta;float x,y,tail_y;int state;if(chart_note(i,&note)<0||note.lane>3)continue;state=g_tutorial_note_state[i];delta=(s32)note.sample-(s32)sample;tail_delta=(s32)(note.sample+note.duration)-(s32)sample;x=g_note_x[note.lane]+(note.must_press?320.0f:0.0f);if(note.duration&&(!note.must_press||state!=2)&&tail_delta>0&&delta<(s32)TUTORIAL_NOTE_AHEAD){y=tutorial_note_y(delta);tail_y=tutorial_note_y(tail_delta);if(tail_y>y){float top=y+g_note_h[note.lane]*.28f;if(top<26.3f)top=26.3f;if(tail_y>360.0f)tail_y=360.0f;if(tail_y>top)q=rect_alpha(q,x+g_note_w[note.lane]*.39f,top,x+g_note_w[note.lane]*.61f,tail_y,224,224,240,150);}}/* As notas do oponente nunca eram retiradas: so o teste de must_press
    marcava estado, entao elas desciam alem do receptor e iam parar
    perto dos pes do BF. No oficial elas somem quando chegam. O canto
    da GF ja marca estado 3 exatamente nesse instante, entao basta
@@ -1109,9 +1115,9 @@ static void estado_dump(const estado_t *e)
         g_tutorial_gf_pack_bytes, g_tutorial_gf_uploaded,
         g_bf_sing, g_bf_sing_at, g_gf_sing, g_gf_sing_at,
         g_tut_zoom, g_tut_bop, g_tut_scroll,
-        g_tutorial_chart_status, g_tutorial_chart_info.note_count,
-        g_tutorial_chart_info.event_count, g_tutorial_chart_cursor,
-        g_tutorial_chart_seen);
+        g_chart_status, g_chart_info.note_count,
+        g_chart_info.event_count, g_chart_cursor,
+        g_chart_seen);
     write_all_fd(fd, b, k);
 
     k = snprintf(b, sizeof(b),
@@ -1224,17 +1230,17 @@ if((pressed&PAD_START)&&(g_held&PAD_SELECT))running=0;
    if(heard>music_clock+1600u){u32 correction=heard-music_clock-1600u;if(correction>32u)correction=32u;music_clock+=correction;}
   }
   heard=music_clock;
-  if(ui_state==8&&audio_started&&g_tutorial_chart_status==0){
-   const tutorial_chart_event_t *event;
-   while(g_tutorial_chart_cursor<g_tutorial_chart_info.event_count){
-    event=tutorial_chart_event(g_tutorial_chart_cursor);if(!event||event->sample>music_clock)break;
+  if(ui_state==8&&audio_started&&g_chart_status==0){
+   const chart_event_t *event;
+   while(g_chart_cursor<g_chart_info.event_count){
+    event=chart_event(g_chart_cursor);if(!event||event->sample>music_clock)break;
     /* Every event's meaning now lives in chart_events.c, which reads the FCH4
        fields. The v3 code that was here packed one parameter into `value` and
        dropped the rest, so SetCameraBop, SetHealthIcon and PlayAnimation never
        reached the port at all. */
     chart_events_apply(event);
-    g_tutorial_chart_last_type=event->type;g_tutorial_chart_last_value=event->value;g_tutorial_chart_last_sample=event->sample;
-    g_tutorial_chart_cursor++;g_tutorial_chart_seen++;
+    g_chart_last_type=event->type;g_chart_last_value=event->value;g_chart_last_sample=event->sample;
+    g_chart_cursor++;g_chart_seen++;
     telemetry_event("tutorial_chart_event",(int)event->type,(int)event->sample);
    }
   }
@@ -1294,18 +1300,32 @@ if((pressed&PAD_START)&&(g_held&PAD_SELECT))running=0;
   capture_status("TUT_NOTE_ATLAS_DONE",(int)frame_no,g_tutorial_note_asset_status);
   telemetry_event("tutorial_note_atlas",g_tutorial_note_asset_status,224*112*4);
   if(g_tutorial_note_asset_status==0){FlushCache(0);setup_texture_dims(&tex2,320,256);upload_raw(&tex2,g_hud_pixels,320,256);}
-  memset(&g_tutorial_chart_info,0,sizeof(g_tutorial_chart_info));g_tutorial_chart_cursor=g_tutorial_chart_seen=0;g_tutorial_chart_last_type=g_tutorial_chart_last_value=g_tutorial_chart_last_sample=0;
+  memset(&g_chart_info,0,sizeof(g_chart_info));g_chart_cursor=g_chart_seen=0;g_chart_last_type=g_chart_last_value=g_chart_last_sample=0;
   tutorial_notes_reset();
   capture_status("TUT_CHART_BEGIN",(int)frame_no,0);
-  g_tutorial_chart_status=tutorial_chart_load("mass:/FNFPS2/assets/test.chart",&g_tutorial_chart_info);
+  /* The chart is resolved through the registry, not hardcoded. The tutorial is
+     what the port plays, so its entry is looked up by id; the difficulty comes
+     from the story menu's choice. sr_chart_path builds
+     "<root>/songs/tutorial/<difficulty>.chart", which is where the game keeps
+     it -- so the asset packaging has to match, and that is now the registry's
+     job rather than a string literal buried in main.c. */
+  {const sr_song_t*song=sr_song_by_id("tutorial");
+   const char*diff=(story_diff==0)?"easy":(story_diff==2)?"hard":"normal";
+   if(song){
+    char chart_path[160];
+    if(sr_chart_path(chart_path,sizeof(chart_path),FNF_ASSET_ROOT,song,diff)>0)
+     g_chart_status=chart_load(chart_path,&g_chart_info);
+    else g_chart_status=-2;
+   } else g_chart_status=-3;
+   telemetry_event("chart_path",g_chart_status,(int)(song?song->bpm*1000.0f:0));}
   /* The event module reads the chart through the same loader, so it needs the
      info struct and the step length. The tutorial is 100 BPM, so a step is
      150 ms, which at 48 kHz is 7200 samples. */
   chart_events_init(TUT_SAMPLES_PER_STEP);
-  chart_events_bind(&g_tutorial_chart_info);
-  chart_rc=g_tutorial_chart_status;
+  chart_events_bind(&g_chart_info);
+  chart_rc=g_chart_status;
   capture_status("TUT_CHART_DONE",(int)frame_no,chart_rc);
-  telemetry_event("tutorial_chart",g_tutorial_chart_status,(int)g_tutorial_chart_info.checksum);
+  telemetry_event("tutorial_chart",g_chart_status,(int)g_chart_info.checksum);
   capture_status("TUT_FORMAT_BEGIN",(int)frame_no,sr);
   if(sr==0&&audio_ok)format_rc=audio_set_stream(audio_volume);
   capture_status("TUT_FORMAT_DONE",(int)frame_no,format_rc);
@@ -1339,7 +1359,7 @@ if((pressed&PAD_START)&&(g_held&PAD_SELECT))running=0;
   }
   if(transition_frame==0&&ui_state==8&&g_tutorial_audio_finished&&(pressed&PAD_CROSS)&&g_tutorial_audio_status==0&&audio_fd>=0){
    audsrv_stop_audio();audio_started=0;audio_playing=0;audio_submitted=music_clock=0;
-   music_clock_tick=music_clock_fraction=0;clock_hold=1;g_tutorial_audio_finished=0;g_tutorial_chart_cursor=g_tutorial_chart_seen=0;g_tutorial_chart_last_type=g_tutorial_chart_last_value=g_tutorial_chart_last_sample=0;tutorial_notes_reset();
+   music_clock_tick=music_clock_fraction=0;clock_hold=1;g_tutorial_audio_finished=0;g_chart_cursor=g_chart_seen=0;g_chart_last_type=g_chart_last_value=g_chart_last_sample=0;tutorial_notes_reset();
    if(audio_ring_reset()==0){audio_playing=1;transport_state=1;g_tutorial_audio_status=0;telemetry_event("tutorial_audio_replay",(int)frame_no,0);}
    else g_tutorial_audio_status=-7;
   }
