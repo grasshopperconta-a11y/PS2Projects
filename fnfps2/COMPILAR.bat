@@ -20,6 +20,10 @@ REM     COMPILAR.bat --instalar-ps2sdk   instala o ps2sdk no WSL (demora ~1h)
 REM     COMPILAR.bat --so-compilar       para no passo 4, nao copia
 REM     COMPILAR.bat --so-assets         so confere os assets
 REM     COMPILAR.bat --limpar            apaga objetos e saida, comeca do zero
+REM     COMPILAR.bat --rapido            -O1 em vez de -O2, itera mais rapido
+REM     COMPILAR.bat --distro=NOME       forca uma distro WSL especifica
+REM     COMPILAR.bat --ps2dev=/caminho   diz onde o ps2sdk esta'
+REM     COMPILAR.bat --ajuda             a lista completa
 REM
 REM  POR QUE WSL: o ps2sdk nao compila nativo no Windows. O build dele usa
 REM  autotools, Makefiles POSIX e shell script -- nao existe port para cmd.exe.
@@ -50,9 +54,13 @@ for %%A in (%*) do (
     if /i "%%~A"=="--limpar"         set "EXTRA=!EXTRA! --clean"
     if /i "%%~A"=="--rapido"         set "EXTRA=!EXTRA! --fast"
     if /i "%%~A"=="--ajuda"          goto :help
+    for /f "tokens=1,2 delims==" %%X in ("%%~A") do (
+        if /i "%%~X"=="--ps2dev" set "PS2DEV=%%~Y"
+    )
+    for /f "tokens=1,2 delims==" %%X in ("%%~A") do (
+        if /i "%%~X"=="--distro" set "DISTRO_OVERRIDE=%%~Y"
+    )
 )
-
-if "%DO_TOOLCHAIN%"=="1" goto :install_toolchain
 
 REM ------------------------------------------------------------------- header
 
@@ -67,17 +75,54 @@ echo.
 REM ------------------------------------------------------------- 1. find WSL
 
 echo [1/6] Procurando o WSL...
-where wsl.exe >nul 2>&1
-if errorlevel 1 goto :no_wsl
 
-REM Pega a primeira distro instalada. Se tiver mais de uma, usamos a primeira;
-REM para escolher outra:  wsl -d NOME   e rode COMPILAR.bat de dentro dela.
+REM wsl.exe lives in System32, which is almost always on PATH -- but not
+REM always: a stripped-down PATH, or some launchers, lose it. Try the explicit
+REM paths before concluding WSL is absent.
+set "WSL="
+where wsl.exe >nul 2>&1 && set "WSL=wsl.exe"
+if not defined WSL if exist "%SystemRoot%\System32\wsl.exe" set "WSL=%SystemRoot%\System32\wsl.exe"
+if not defined WSL if exist "%SystemRoot%\Sysnative\wsl.exe" set "WSL=%SystemRoot%\Sysnative\wsl.exe"
+if not defined WSL goto :no_wsl
+
+REM wsl -l -q prints ONLY the distro names, one per line, with no header. An
+REM earlier version of this script used skip=1, which is right for "wsl -l"
+REM but wrong for "wsl -l -q" -- with a single distro it skipped the only line
+REM there was and reported WSL as missing. Filter instead of skipping: drop
+REM blank lines and the localized header some builds print anyway.
 set "DISTRO="
-for /f "skip=1 tokens=* usebackq" %%D in (`wsl -l -q 2^>nul`) do (
-    if not defined DISTRO set "DISTRO=%%D"
+if defined DISTRO_OVERRIDE (
+    set "DISTRO=!DISTRO_OVERRIDE!"
+) else (
+    for /f "usebackq tokens=*" %%D in (`"%WSL%" -l -q 2^>nul`) do (
+        if not defined DISTRO (
+            set "LINE=%%D"
+            if not "!LINE!"=="" (
+                echo !LINE! | findstr /i /c:"Subsystem" >nul 2>&1 || set "DISTRO=%%D"
+            )
+        )
+    )
 )
-if not defined DISTRO goto :no_wsl
-echo       OK, distro: !DISTRO!
+if not defined DISTRO (
+    REM Enumeration came up empty. That does not mean WSL is missing -- some
+    REM builds mangle "wsl -l -q" output when it is redirected. Fall back to
+    REM bare wsl, which runs the default distro, rather than giving up.
+    echo       ^(nao consegui listar as distros; vou usar a padrao^)
+    set "WSLRUN="%WSL%""
+) else (
+    echo       OK, distro: !DISTRO!
+    set "WSLRUN="%WSL%" -d !DISTRO!"
+)
+
+REM WSL gained -e ("run this, do not go through a login shell"); older builds do
+REM not have it, and passing it to one that does not know it fails deep inside
+REM the build with a confusing error. Probe once, here, where the failure is
+REM obvious.
+set "WSLEX="
+"%WSL%" -e echo wslok >nul 2>&1 && set "WSLEX=-e"
+if defined WSLEX (echo       OK, esta' distro aceita -e) else (echo       OK, distro antiga, sem -e)
+
+if "%DO_TOOLCHAIN%"=="1" goto :install_toolchain
 
 REM ------------------------------------------- 2. windows path -> linux path
 
@@ -100,16 +145,29 @@ if not exist "%HERE%\build.sh" (
 )
 echo       OK: !WSLPATH!
 
+!WSLRUN! !WSLEX! sh -c "test -f '!WSLPATH!/build.sh'" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo   ERRO: o WSL nao esta' conseguindo ver a pasta.
+    echo   Esperava encontrar build.sh em !WSLPATH!
+    echo.
+    echo   Se o projeto esta' em outra unidade ^(D:, E:...^), o /mnt/ so'
+    echo   cobre as que o WSL monta. Rode no Ubuntu:
+    echo       sudo mkdir -p /mnt/d ^&^& sudo mount -t drvfs D: /mnt/d
+    echo.
+    pause & exit /b 1
+)
+
 REM ---------------------------------------- 3. gcc / make / python3 no WSL
 
 echo [3/6] Conferindo gcc, make e python3 no WSL...
-wsl -d !DISTRO! -e sh -c "command -v gcc >/dev/null && command -v make >/dev/null && command -v python3 >/dev/null" >nul 2>&1
+!WSLRUN! !WSLEX! sh -c "command -v gcc >/dev/null && command -v make >/dev/null && command -v python3 >/dev/null" >nul 2>&1
 if errorlevel 1 (
     echo.
     echo   Faltam ferramentas basicas. Instalando...
     echo   ^(vai pedir a sua senha de usuario do Ubuntu^)
     echo.
-    wsl -d !DISTRO! -e sudo sh -c "apt-get update && apt-get install -y build-essential python3 git"
+    !WSLRUN! !WSLEX! sudo sh -c "apt-get update && apt-get install -y build-essential python3 git"
     if errorlevel 1 (
         echo.
         echo   ERRO: nao consegui instalar. Rode num terminal Ubuntu:
@@ -124,9 +182,14 @@ REM --------------------------------------------- 4. achar o ps2sdk no WSL
 
 echo [4/6] Procurando o ps2sdk...
 set "FOUND="
-for %%P in ("$PS2DEV" "/var/tmp/ps2dev-root/ps2dev" "/usr/local/ps2dev" "/opt/ps2dev" "$HOME/ps2dev" "/usr/local/ps2sdk") do (
+REM /usr/local/ps2dev first: that is where ps2toolchain's build-all.sh
+REM installs, and it is where this user's is. %PS2DEV% is a Windows variable,
+REM so it has to be handed to the shell rather than expanded by cmd.
+set "CAND=%PS2DEV%"
+if "!CAND!"=="" set "CAND=/usr/local/ps2dev"
+for %%P in ("!CAND!" "/usr/local/ps2dev" "$HOME/ps2dev" "/opt/ps2dev" "/usr/local/ps2sdk" "/var/tmp/ps2dev-root/ps2dev") do (
     if not defined FOUND (
-        wsl -d !DISTRO! -e sh -c "test -x %%P/bin/ee-gcc -o -x %%P/ee/bin/ee-gcc" >nul 2>&1
+        !WSLRUN! !WSLEX! sh -c "test -x '%%P/bin/ee-gcc' -o -x '%%P/ee/bin/ee-gcc'" >nul 2>&1
         if not errorlevel set "FOUND=%%P"
     )
 )
@@ -150,11 +213,16 @@ if defined FOUND (
 REM ------------------------------------------------------- 5. compilar
 
 echo.
-echo [5/6] Compilando...
+echo [5/6] Compilando... ^(a primeira vez demora mais^)
+echo.
+echo   Uma coisa: compilar dentro de /mnt/c eh mais lento que no disco do
+echo   Linux, porque o WSL acessa o Windows por cima de um sistema de arquivos
+echo   de rede. Se ficar incomodo, eu mudo para copiar tudo para dentro do
+echo   Ubuntu, compilar la', e trazer so' o resultado de volta.
 echo.
 
 if "%DO_ASSETS_ONLY%"=="1" (
-    wsl -d !DISTRO! -e sh -c "cd '!WSLPATH!' && PS2DEV='!PS2DEV!' ./build.sh --check-assets !EXTRA!"
+    !WSLRUN! !WSLEX! sh -c "cd '!WSLPATH!' && PS2DEV='!PS2DEV!' ./build.sh --check-assets !EXTRA!"
     echo.
     echo   Abrindo a lista de links no seu navegador...
     echo   Baixe cada arquivo e mova para:  %HERE%\assets\
@@ -163,7 +231,7 @@ if "%DO_ASSETS_ONLY%"=="1" (
     goto :fim
 )
 
-wsl -d !DISTRO! -e sh -c "cd '!WSLPATH!' && PS2DEV='!PS2DEV!' ./build.sh --deploy !EXTRA!"
+!WSLRUN! !WSLEX! sh -c "cd '!WSLPATH!' && PS2DEV='!PS2DEV!' ./build.sh --deploy !EXTRA!"
 if errorlevel 1 (
     echo.
     echo ============================================================
@@ -288,13 +356,8 @@ choice /c SN /m "Comecar agora"
 if errorlevel 2 exit /b 0
 echo.
 
-set "DISTRO="
-for /f "skip=1 tokens=* usebackq" %%D in (`wsl -l -q 2^>nul`) do (
-    if not defined DISTRO set "DISTRO=%%D"
-)
-if not defined DISTRO goto :no_wsl
-
-wsl -d !DISTRO! -e sh -c "sudo apt-get update && sudo apt-get install -y build-essential python3 git texinfo flex bison m4 autoconf automake libtool cmake libgmp-dev libmpfr-dev libmpc-dev zlib1g-dev"
+REM WSL, the distro and WSLRUN were all resolved before this label.
+!WSLRUN! !WSLEX! sh -c "sudo apt-get update && sudo apt-get install -y build-essential python3 git texinfo flex bison m4 autoconf automake libtool cmake libgmp-dev libmpfr-dev libmpc-dev zlib1g-dev"
 if errorlevel 1 (
     echo   ERRO instalando dependencias. Veja acima.
     pause & exit /b 1
@@ -304,7 +367,7 @@ echo.
 echo   Baixando e compilando o ps2toolchain...
 echo   ^(pode ir tomar um cafe'^)
 echo.
-wsl -d !DISTRO! -e sh -c "git clone --depth=1 https://github.com/ps2dev/ps2toolchain ~/ps2toolchain 2>/dev/null; cd ~/ps2toolchain && ./build-all.sh"
+!WSLRUN! !WSLEX! sh -c "git clone --depth=1 https://github.com/ps2dev/ps2toolchain ~/ps2toolchain 2>/dev/null; cd ~/ps2toolchain && ./build-all.sh"
 if errorlevel 1 (
     echo.
     echo   ERRO no build do ps2toolchain. Me mande a saida acima.
