@@ -717,3 +717,109 @@ Consequences for the port:
 Downloading all of them reliably means resolving which copy is the game's for
 each of the 169 props. That is doable but it is a job of its own, and it is
 recorded here as a gap rather than assumed away.
+
+### 10.1 What the stage images actually cost
+
+`tools/vram_budget.py` measures every stage against the SCPH-90006's texture
+budget using the real pixel dimensions in `assets-data/stage-image-sizes.json`
+(144 of 149 images measured; 5 remain unmeasured and are reported as gaps, not
+guessed). The budget is:
+
+* 4,194,304 B of VRAM on the console;
+* 2,293,760 B for the two 640x448 framebuffers;
+* 1,630,064 B the port already uploads outside the stage -- the BF and GF frame
+  buffers, the 320x307 PSMCT16 HUD, the title textures and the 384x192 font
+  atlas, all taken from `src/main.c` rather than estimated;
+* which leaves **269,480 B for the stage itself**.
+
+Against that, the measured totals are:
+
+| stage | props at native resolution | factor needed to fit |
+|---|---|---|
+| sserafim | 323,182,592 B | 1/38 |
+| mallXmasErect | 204,800,768 B | 1/32 |
+| tankmanBattlefield | 171,072,000 B | 1/32 |
+| mallXmas | 172,032,000 B | 1/32 |
+| phillyStreetsErect | 269,312,768 B | 1/30 |
+| limoRideErect | 222,208,000 B | 1/32 |
+| phillyStreets | 215,040,000 B | 1/24 |
+| spookyMansionErect | 262,144,000 B | 1/19 |
+| mainStageErect | 262,912,000 B | 1/20 |
+| limoRide | 188,416,000 B | 1/32 |
+| mainStage | 147,456,000 B | 1/20 |
+| phillyTrain | 212,992,000 B | 1/17 |
+| phillyTrainErect | 212,992,000 B | 1/17 |
+| spookyMansion | 262,144,000 B | 1/15 |
+| school | 225,280,000 B | 1/16 |
+| schoolErect | 225,280,000 B | 1/16 |
+| mallEvil | 196,608,000 B | 1/13 |
+| tankmanBattlefieldErect | 264,192,000 B | 1/10 |
+| phillyBlazin | 229,376,000 B | 1/13 |
+| schoolEvil | 262,144,000 B | 1/3 |
+| **schoolEvilErect** | **262,656 B** | **1/2 -- the only stage that fits** |
+
+Two things follow, and neither is negotiable by the port.
+
+**The stages cannot be uploaded at their native resolution.** The cheapest
+stage that does not fit needs 1,224x more texture memory than exists. Even
+`schoolEvil`, the smallest stage with images, is 9.7x over. `schoolEvilErect`
+is the sole exception, and only because its props are small.
+
+**`src/main.c`'s stage texture is 512x256** -- line 1153 reports
+`(512<<16)|256` for `stagetex`. That is 524,288 B, so the port has already been
+downscaling; the table above says by how much, per stage, and that the current
+fixed 512x256 is wrong for every stage except the two smallest.
+
+This is the one place where "exactly as the original" and "runs on a PS2" cannot
+both hold, and the port has to choose the second. What survives the choice is
+the composition, the scroll factors, the parallax between layers and the
+camera's behaviour; what does not is the pixel detail of the backdrops.
+
+### 10.2 STAGE_WIN_* does not describe mainStage
+
+`src/main.c` lines 68-71 define `STAGE_WIN_X/Y/W/H` as 88.35, 78.9, 1427.3 and
+859.2, with `STAGE_SCROLL` 0.9 on line 67. The draw at line 1549 places the
+512x256 stage texture at `320 + STAGE_WIN_X - cx*STAGE_SCROLL + 640*STAGE_SCROLL
+- 640` by `180 + STAGE_WIN_Y - cy*STAGE_SCROLL + 360*STAGE_SCROLL - 360`, at a
+size of `STAGE_WIN_W x STAGE_WIN_H`.
+
+At the camera's origin that is the rectangle (408.35, 258.9) to (1835.65,
+1118.1) on a 640x360 logical screen -- so the camera at rest shows roughly the
+top-left sixth of the texture, and the rectangle falls far outside the screen.
+`STAGE_WIN_*` is therefore a window into a larger stage, not the stage's bounds.
+
+Three aspect ratios disagree, and none of them is derivable from the others:
+
+| quantity | value | aspect |
+|---|---|---|
+| the stage texture | 512 x 256 | 2.000 |
+| `STAGE_WIN_W x STAGE_WIN_H` | 1427.3 x 859.2 | 1.661 |
+| mainStage's union bbox, measured | 2816 x 1539.1 | 1.829 |
+
+A 2.000 texture stretched onto a 1.661 rectangle is a non-uniform scale: the
+stage is drawn about 12% wider than it is tall, relative to the image. That is
+either a real defect or `STAGE_WIN_*` was fitted to something other than the
+measured union. **The values stay unverified. Nothing in the JSON or the
+recovered source derives them, so they are not corrected here** -- the port
+needs to recompute them from the union bbox once the stage texture is per-stage
+rather than a fixed 512x256.
+
+### 10.3 Where the images live
+
+The stage images are not in one folder. They sit in per-week `images/`
+directories mixed with unrelated assets, and `assets/shared/images/stages/` does
+not exist. The table in `assets-data/stage-image-sizes.json` keys each image by
+the stage JSON's `assetPath`, which is the only reliable identifier: several
+files exist in multiple copies with different dimensions, and the stage JSON is
+what says which one the game reads.
+
+Two copies are worth naming because they differ:
+
+* `limo/bgLimo.png` -- 4096x2048 in `limo/images/`, and 4096x2048 in
+  `limo/images/erect/`; the same size, so `limoRide` and `limoRideErect` cannot
+  be told apart by size alone.
+* `limo/limoDrive.png` -- **2048x2048** in `limo/images/` but **4096x4096** in
+  `limo/images/erect/`. `limoRideErect` references `limo/erect/limoDrive`, so it
+  is the 4096x4096 copy. Picking the wrong one would quadruple that layer.
+
+The 169 props across the 21 stages resolve to 144 distinct images.
