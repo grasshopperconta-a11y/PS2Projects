@@ -823,3 +823,108 @@ Two copies are worth naming because they differ:
   is the 4096x4096 copy. Picking the wrong one would quadruple that layer.
 
 The 169 props across the 21 stages resolve to 144 distinct images.
+
+### 10.4 The display scale, taken from the original itself
+
+The user asked how the original behaves when the window is resized, so that the
+PS2's scale could be computed the same way. v0.8.6 answers this directly:
+`source/Main.hx` line 196 sets `FlxG.scaleMode = new FullScreenScaleMode()`, and
+`source/funkin/ui/FullScreenScaleMode.hx` contains the arithmetic.
+`tools/ps2_display.py` reimplements it.
+
+The two functions that matter are `updateGameSize()` and `updateScaleOffset()`:
+
+    gameRatio   = FlxG.width / FlxG.height          // 1280 / 720 = 1.7778
+    screenRatio = Width / Height                    // the window
+    ratioAxis   = screenRatio < gameRatio ? Y : X    // letterbox or pillarbox
+
+    if ratioAxis == Y:                              // window narrower than the game
+        gameSize.x   = Width                        // use the window's full width
+        logicalSize.y = ceil(gameSize.x / gameRatio)
+        gameSize.y   = logicalSize.y
+    else:                                           // window wider than the game
+        gameSize.y   = Height                       // use the window's full height
+        logicalSize.x = ceil(gameSize.y * gameRatio)
+        gameSize.x   = logicalSize.x
+
+    scale.x = deviceSize.x / FlxG.width
+    scale.y = deviceSize.y / FlxG.height
+    scale.x = scale.y = min(scale.x, scale.y)       // uniform, never distorts
+
+    offset.x = ceil((deviceSize.x - gameSize.x) * 0.5)   // centred
+    offset.y = ceil((deviceSize.y - gameSize.y) * 0.5)
+
+So the game always scales uniformly to fit the window, is centred, and whatever
+is left over becomes a black bar. The game's own proportions, and the position
+of everything inside it, never change. That is the behaviour to reproduce.
+
+Applied to the console (`src/main.c` draws 640x448 PSMCT32, double buffered):
+
+* `screenRatio` 640/448 = **1.4286**, `gameRatio` 1280/720 = **1.7778**;
+* 1.4286 < 1.7778, so `ratioAxis = Y` -- the console is narrower than the game
+  and must be letterboxed;
+* `gameSize.x = 640`, `logicalSize.y = ceil(640 / 1.7778) = 360`;
+* `scale = min(640/1280, 448/720) = 0.5` exactly;
+* `offset.y = ceil((448 - 360) * 0.5) = 44`, and 44 px remain at the bottom.
+
+**The game area is 640x360 at a uniform 0.5x, with 44 px black bars top and
+bottom.** `src/main.c` already draws exactly this, so the port's display
+geometry is correct and needed no change. The scale being a clean 0.5 means
+every texture only has to be **half** its original resolution to appear at
+precisely the size the original shows it -- same aspect, same position, same
+proportions.
+
+### 10.5 Half resolution is the display target, not yet the VRAM answer
+
+`tools/ps2_display.py` also totals each stage at that half resolution, against
+the texture budget that is left once the two framebuffers and the textures
+`src/main.c` already uploads are taken out:
+
+| stage | native | at 0.5x | against 269,480 B |
+|---|---|---|---|
+| mallXmasErect | 171,281,364 | 42,826,900 | 159x over |
+| sserafim | 161,773,828 | 40,462,188 | 150x over |
+| tankmanBattlefield | 155,894,732 | 38,981,800 | 145x over |
+| mallXmas | 155,786,080 | 38,950,220 | 145x over |
+| limoRideErect | 135,290,240 | 33,824,128 | 126x over |
+| phillyStreetsErect | 88,293,592 | 22,086,548 | 82x over |
+| limoRide | 81,131,200 | 20,284,768 | 75x over |
+| phillyStreets | 73,081,624 | 18,286,160 | 68x over |
+| mainStageErect | 61,607,200 | 15,403,952 | 57x over |
+| spookyMansionErect | 52,777,216 | 13,194,304 | 49x over |
+| school | 44,635,388 | 11,162,820 | 41x over |
+| schoolErect | 44,635,388 | 11,162,820 | 41x over |
+| phillyTrain | 41,026,576 | 10,262,824 | 38x over |
+| phillyTrainErect | 41,026,576 | 10,262,824 | 38x over |
+| spookyMansion | 35,410,176 | 8,852,544 | 33x over |
+| mainStage | 34,621,440 | 8,657,920 | 32x over |
+| mallEvil | 22,815,044 | 5,709,108 | 21x over |
+| phillyBlazin | 17,329,044 | 4,339,708 | 16x over |
+| tankmanBattlefieldErect | 14,031,824 | 3,509,288 | 13x over |
+| schoolEvil | 1,324,128 | 332,428 | 1.2x over |
+| **schoolEvilErect** | **1,009,068** | **253,712** | **fits** |
+
+Two conclusions, and they are different in kind.
+
+**0.5x is the right target and the port already has it.** Resizing every
+texture to half its original resolution reproduces the original's appearance
+exactly at the console's resolution, and the display geometry that does it is
+already in `src/main.c`. This part is settled.
+
+**0.5x still does not fit in VRAM, and the gap is 13x to 159x.** The console has
+1,900,544 B of texture memory in total. No arrangement of half-resolution
+textures fits a stage larger than `schoolEvil`. So the backdrops must be reduced
+*further* than their display size, and will be softer on screen than the
+original at the same window size. That is the hardware's limit and not a choice
+the port gets to make -- but it is a separate, smaller compromise than the one
+in 10.1, because 0.5x is now known to be exactly right rather than merely
+plausible.
+
+One further saving is available and has not been counted above: the title
+textures `src/main.c` uploads -- `(320*240 + 256*235 + 320*192) * 4` =
+1,069,888 B -- are only needed on the title screen. Releasing them during
+gameplay raises the stage budget from 269,480 B to 1,339,368 B, which brings
+`schoolEvil` and `schoolEvilErect` comfortably inside and narrows every other
+stage's gap. `vram_cache` and `io_fila` already exist to do this, which is
+presumably what the port's own Phase 0 intended: stream the visible part of the
+backdrop and let the LRU evict what the camera has left behind.

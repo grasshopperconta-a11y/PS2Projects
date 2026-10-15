@@ -32,6 +32,8 @@ echo
 echo "== bs_dados.h stage + character tables match the game's own JSON =="
 python3 tools/check_bs_dados.py
 python3 tools/check_bs_chars.py
+python3 tools/vram_budget.py >/dev/null || exit 1
+python3 tools/ps2_display.py >/dev/null || exit 1
 echo
 
 echo "== stage geometry =="
