@@ -4,3 +4,4 @@ build/
 # Python bytecode from the converter and the registry generator.
 __pycache__/
 *.pyc
+build/charts-v3/

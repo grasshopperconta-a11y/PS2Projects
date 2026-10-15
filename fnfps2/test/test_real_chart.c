@@ -78,13 +78,17 @@ int main(int argc, char **argv)
     for (u32 i = 0; i < info.event_count; i++) {
         const tutorial_chart_event_t *e = tutorial_chart_event(i);
         if (!e) { ev_order_ok = 0; continue; }
-        if (e->order != i) ev_order_ok = 0;
+        /* v4 dropped the order field: it always had to equal the index, so it
+           carried no information. Only v3 files have it to check. */
+        if (info.version == 3u && e->order != i) ev_order_ok = 0;
         if (e->type == 0) ev_type_ok = 0;
         if (e->sample < ev_prev) ev_sorted = 0;
         if (e->sample > info.song_end_sample) ev_inside = 0;
         ev_prev = e->sample;
     }
-    ck(ev_order_ok, "every event's order field is its index");
+    ck(ev_order_ok, info.version == 3u
+       ? "every event's order field is its index"
+       : "v4 has no order field (it always equalled the index)");
     ck(ev_type_ok, "no event has type 0 (the loader rejects it)");
     ck(ev_sorted && ev_inside, "events are sorted and inside the song");
 
@@ -122,13 +126,16 @@ int main(int argc, char **argv)
         ck(focus + zoom + scroll + anim == (int)info.event_count,
            "every event maps to one of the four loader types");
 
+        /* The primary parameter lives in `value` for v3 and in p1 for v4 (v4
+           puts the duration in p0 and the actual value in p1). */
         float zoom_to = 0.0f, scroll_to = 0.0f;
         for (u32 i = 0; i < info.event_count; i++) {
             const tutorial_chart_event_t *e = tutorial_chart_event(i);
+            u32 raw = info.version == 4u ? e->p1 : (e->value & 0xFFFFu);
             if (e->type == 2 && zoom_to == 0.0f)
-                zoom_to = (float)(e->value & 0xFFFFu) / 1000.0f;
+                zoom_to = (float)raw / 1000.0f;
             if (e->type == 4)
-                scroll_to = (float)(e->value & 0xFFFFu) / 1000.0f;
+                scroll_to = (float)raw / 1000.0f;
         }
         ck(zoom_to == 1.3f, "first zoom target is 1.3 (zoom*defaultZoom)");
         ck(scroll_to == 1.2f, "scroll target is 1.2 (scroll 1.2 * chart scrollSpeed 1.0)");
