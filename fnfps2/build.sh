@@ -302,7 +302,35 @@ if [ "$DO_DEPLOY" = 1 ]; then
         python3 tools/check_assets.py assets --missing-only || true
     fi
 
-    # The charts, laid out the way the registry expects them.
+    # The charts, laid out the way the registry expects them. --deploy-only
+    # skips the offline suite, and the suite is what normally fills
+    # build/charts; without this, a first --deploy-only silently staged an ELF
+    # with no charts at all, which looks like a working deploy right up until
+    # the console finds no song.
+    if [ ! -d build/charts ] || [ -z "$(ls -A build/charts 2>/dev/null)" ]; then
+        if [ -d assets-data/charts ] && command -v python3 >/dev/null 2>&1; then
+            step "converting the charts"
+            mkdir -p build/charts
+            n=0
+            for f in assets-data/charts/*-chart.json; do
+                [ -e "$f" ] || continue
+                sid=$(basename "$f" -chart.json)
+                for diff in easy normal hard; do
+                    python3 tools/fnf_to_fch3.py \
+                        --metadata "assets-data/songs/$sid-metadata.json" \
+                        --chart "$f" \
+                        --difficulty "$diff" -o "build/charts/$sid-$diff.chart" \
+                        >/dev/null 2>&1 && n=$((n + 1))
+                done
+            done
+            if [ "$n" = 0 ]; then
+                warn "no chart converted; is assets-data/ present?"
+            else
+                ok "$n charts converted"
+            fi
+        fi
+    fi
+
     if [ -d build/charts ]; then
         for f in build/charts/*.chart; do
             [ -e "$f" ] || continue
