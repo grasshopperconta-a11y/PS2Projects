@@ -126,10 +126,13 @@ fi
 if [ "$CHECK_ASSETS" = 1 ]; then
     step "checking the assets the port reads at runtime"
     [ -d assets ] || mkdir -p assets
-    python3 tools/check_assets.py assets
+    python3 tools/check_assets.py assets --links
     rc=$?
     if [ "$rc" = 0 ]; then
         printf '\n    %sok%s   every asset the port needs is on disk\n\n' "$C_GRN" "$C_OFF"
+    else
+        printf '\n    Open assets-faltando.html in your browser: it has one link\n'
+        printf '    per missing file, so you do not have to copy ids by hand.\n\n'
     fi
     exit "$rc"
 fi

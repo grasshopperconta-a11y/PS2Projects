@@ -1,0 +1,16 @@
+Os 16 arquivos que o jogo lê em runtime vão aqui.
+
+Eles são texturas e áudio já convertidos (uns 65 MB) e ficam no Google Drive,
+não no pacote, porque são grandes demais para versionar.
+
+Para saber o que falta:
+
+    ./build.sh --check-assets        (Linux)
+    COMPILAR.bat                     (Windows, duplo-clique)
+
+Os dois escrevem assets-faltando.html, na pasta acima desta, com um link para
+cada arquivo que falta. Baixe, mova para cá, e confira de novo -- o verificador
+compara o tamanho byte a byte, então um download pela metade é pego.
+
+A lista completa, com o id no Drive e o tamanho de cada arquivo, está em
+assets-manifest.json na raiz do projeto.

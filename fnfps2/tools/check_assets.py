@@ -23,6 +23,10 @@ def main():
     ap.add_argument("directory", nargs="?", default="assets")
     ap.add_argument("--missing-only", action="store_true")
     ap.add_argument("--json", action="store_true", dest="as_json")
+    ap.add_argument("--links", action="store_true",
+                    help="write assets-faltando.html with one download link per "
+                         "missing asset, so a browser that is already signed in "
+                         "can fetch them without copying ids by hand")
     args = ap.parse_args()
 
     with open(MANIFEST) as fh:
@@ -49,6 +53,12 @@ def main():
              "wrong_size": [w[0] for w in wrong_size]},
             indent=2))
         return 0
+
+    # A page with one link per missing asset. Drive will not hand a file to an
+    # unauthenticated wget, and the browser is already signed in, so a page of
+    # links is the reliable way to get them -- no ids to copy by hand.
+    if args.links and (missing or wrong_size):
+        _write_links(man, missing, wrong_size)
 
     if not args.missing_only:
         print("%d of %d required assets present and correctly sized" % (len(ok), required))
@@ -78,6 +88,53 @@ def main():
     if args.missing_only:
         print("all %d required assets are present and correctly sized" % required)
     return 0
+
+
+
+
+def _write_links(man, missing, wrong_size):
+    """Write assets-faltando.html: one clickable link per asset still needed."""
+    rows = []
+    for name, meta in missing:
+        rows.append((name, meta["bytes"], "faltando",
+                     "https://drive.google.com/file/d/%s/view" % meta["drive_id"]))
+    for name, meta, got in wrong_size:
+        rows.append((name, meta["bytes"], "tamanho errado (%d B)" % got,
+                     "https://drive.google.com/file/d/%s/view" % meta["drive_id"]))
+
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "..", "assets-faltando.html")
+    out = os.path.normpath(out)
+    with open(out, "w", encoding="utf-8") as fh:
+        fh.write("""<!doctype html>
+<meta charset="utf-8">
+<title>Assets que faltam</title>
+<style>
+ body { font: 15px/1.5 system-ui, sans-serif; max-width: 60em; margin: 2em auto; padding: 0 1em; }
+ h1 { font-size: 1.3em; }
+ p  { color: #555; }
+ li { margin: .5em 0; }
+ a  { color: #06c; }
+ .sz { color: #888; font-size: .85em; }
+ .bad { color: #a60; }
+</style>
+<h1>Assets que faltam</h1>
+<p>Clique em cada link, baixe o arquivo, e mova todos para a pasta
+<code>assets/</code> ao lado desta pagina. Depois rode
+<code>./build.sh --check-assets</code> de novo &mdash; ele confere o tamanho
+byte a byte, ent&atilde;o um download pela metade &eacute; pego.</p>
+<ol>
+""")
+        for name, size, why, url in rows:
+            fh.write('<li><a href="%s">%s</a> <span class="sz">%s &middot; '
+                     '%d bytes</span>%s</li>\n'
+                     % (url, name, why, size,
+                        ' <span class="bad">&larr; baixar de novo, veio '
+                        'incompleto</span>' if why != "faltando" else ""))
+        fh.write('</ol>\n<p>Ou a pasta inteira, se preferir: '
+                 '<a href="%s">%s</a></p>\n'
+                 % (man["drive_folder_url"], man["drive_folder_url"]))
+    print("\nLinks escritos em: assets-faltando.html")
 
 
 if __name__ == "__main__":
