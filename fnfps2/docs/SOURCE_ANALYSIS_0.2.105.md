@@ -211,3 +211,47 @@ textures) against the measured 1,900,544 B of texture VRAM:
 So the scene fits, but only with the three stage layers reduced to one and the
 ten props packed four-per-atlas. That is the packer's contract, and it is now a
 test rather than an estimate. (384 B of headroom — the packer must not pad.)
+
+## Progress log
+
+### 2026-10-15 — song registry (P0 package 1)
+
+`fnfps2/src/engine/song_registry.{h,c}` + `test/test_registry.c`, all passing
+under `-Werror`. Replaces the single hardcoded Tutorial song with a data-driven
+list. Both the level order and the song grouping were read out of the v0.8.6
+source rather than assumed:
+
+- level ids/order: `funkin.data.story.level.LevelRegistry.listBaseGameEntryIds()`
+  → tutorial, week1…week7, weekend1, sserafim
+- song grouping: `funkin/InitState.hx` `startSong()`, lines 519–541
+
+`sr_validate()` checks every character and stage id against the official
+tables in `bs_dados.h`, so a wrong id is a test failure rather than a black
+screen on the console.
+
+Registered: **27 songs across 10 levels** — the 26 the source confirms
+(tutorial; bopeebo/fresh/dadbattle; spookeez/south/monster; pico/philly-nice/
+blammed; high/satin-panties/milf; cocoa/eggnog/winter-horrorland; senpai/roses/
+thorns; ugh/guns/stress; darnell/lit-up/2hot/blazin) plus one sserafim
+placeholder.
+
+Asset path convention now fixed (and tested):
+```
+<root>/songs/<id>/<difficulty>.chart   FCH3, see tools/fnf_to_fch3.py
+<root>/songs/<id>/Inst.pcm             s16le stereo 48 kHz
+<root>/songs/<id>/Voices-<bf|dad>.pcm
+<root>/chars/<character>.pack
+```
+
+### Needs from your assets (funkin.assets @ 9300719)
+1. **The three sserafim song ids.** They are not in the source, only in the
+   level JSON. Replace `s_sserafim_placeholder` and set `lv_sserafim.song_count`.
+2. **Confirm the derived `stage`/`player`/`girlfriend`/`opponent` per song.**
+   These came from the game's known layout, not from a file I read. The ids are
+   all valid (the test proves that), but e.g. whether `roses` uses `senpai-angry`
+   and whether week4's order is `high, satin-panties, milf` (as the source's
+   switch lists them) should be checked against the real metadata. If your
+   Butterscotch already emits these, send me its output and I will replace the
+   table wholesale.
+3. **Per-difficulty `scrollSpeed` and which difficulties each chart has.**
+   The registry currently assumes easy/normal/hard at 1.0 for every song.
