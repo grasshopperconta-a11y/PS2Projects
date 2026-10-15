@@ -681,3 +681,39 @@ Two things still are not covered by this:
   now known but not yet wired in.
 - `danceEvery` (default 1.0) and `healthIcon` are in the JSONs and are not in
   `bs_dados.h` at all.
+
+## 10. Where the stage images actually are (2026-10-15)
+
+The 21 stage JSONs are in one folder, but their images are not. There is no
+`assets/shared/images/stages/` root in the Drive mirror; the images sit in
+scattered folders that also hold unrelated assets, and several exist in more
+than one copy.
+
+Measured examples:
+
+| image | copies found | sizes |
+|---|---|---|
+| `weebSchool.png` | 4 | 2956 / 3517 / 2512 / 1888 B |
+| `bgLimo.png` | 2 | 731659 / 501453 B |
+
+The `limo` folder does sit under a `stages`-like parent (`.../1c0kvOB.../limo`),
+but that parent holds nothing else, and `weeb/` hangs off a different tree that
+also contains `pixelNoteSplash.png` and `pixelNoteHoldCover.png`. So the tree is
+fragmented by whatever order the upload happened in.
+
+Consequences for the port:
+
+- `tools/dump_stage_geometry.py` can only compute a complete bounding box for
+  `mainStage`, because that is the only stage whose three images are known. It
+  says so rather than inventing sizes.
+- The three shared images are known and measured: `stageback` 2560x1400
+  (1 channel), `stagefront` 2560x581 (4 channels), `stagecurtains` 2560x1400
+  (4 channels). Those are the Tutorial's stage, so the Tutorial's geometry is
+  fully checkable.
+- The VRAM budget still has to treat the other 20 stages' images as unknown.
+  The worst case in the budget (`tankmanBattlefield`, 18 props) is therefore
+  still an estimate, not a measurement.
+
+Downloading all of them reliably means resolving which copy is the game's for
+each of the 169 props. That is doable but it is a job of its own, and it is
+recorded here as a gap rather than assumed away.
