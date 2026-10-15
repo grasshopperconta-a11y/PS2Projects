@@ -9,14 +9,14 @@
 #include <string.h>
 #include <unistd.h>
 
-/* Inicializa o cliente RPC fileXio; as operações de arquivo em si usam a
- * camada POSIX/newlib, como exige esta versão do PS2SDK. */
+/* Inicializa o cliente RPC fileXio; as operacoes de arquivo em si usam a
+ * camada POSIX/newlib, como exige esta versao do PS2SDK. */
 extern int fileXioInit(void);
 
-#define MAX_FRAMES 18000
+#define MAX_FRAMES 512
 #define LOG_PATH "mass:/FNFPS2/FNF_COLHEITA.txt"
 #define RENDER_LOG_PATH "mass:/FNFPS2/FNF_COLHEITA.txt"
-#define MAX_RENDER_EVENTS 2048
+#define MAX_RENDER_EVENTS 4096
 
 typedef struct {
     u32 frame;
@@ -36,6 +36,7 @@ static int usb_ready;
 typedef struct {u64 ticks;char name[24];s32 a,b;} render_event_t;
 static render_event_t render_events[MAX_RENDER_EVENTS];
 static u32 render_event_count;
+static u32 render_events_dropped;
 
 extern unsigned char iomanX_irx[];
 extern unsigned int size_iomanX_irx;
@@ -52,11 +53,73 @@ static int exec_irx(void *data, unsigned int size)
     return SifExecModuleBuffer(data, size, 0, NULL, &result);
 }
 
+/* ---------------------------------------------------------------- saida
+ *
+ * O descritor fica ABERTO a partir do init. A versao anterior abria e fechava
+ * em cada escrita, e so escrevia no fim -- de modo que um travamento, que eh
+ * justamente quando o log importa, nao deixava nada. Aqui cada bloco sai
+ * pendurado no mesmo descritor, com buffer proprio, e telemetry_flush() esvazia
+ * esse buffer quando quem chama quiser.
+ *
+ * usbhdfsd provou mais confiavel no SCPH-90006 com blocos pequenos e
+ * comprometidos, e NAO aceita fsync repetido entre blocos: a sincronizacao
+ * acontece uma vez, no flush, e nao em cada linha.
+ */
+#define OUTPUT_BUFFER_SIZE 8192
+static char output_buffer[OUTPUT_BUFFER_SIZE];
+static unsigned int output_used;
+static unsigned int output_checksum;
+static int output_error;
+static int log_fd = -1;
+static u32 flush_count;
+
+static void flush_output(void)
+{
+    unsigned int done = 0;
+    if (log_fd < 0 || output_used == 0) { output_used = 0; return; }
+    while (done < output_used) {
+        int result = write(log_fd, output_buffer + done, output_used - done);
+        if (result <= 0) { output_error = 1; break; }
+        done += (unsigned int)result;
+    }
+    output_used = 0;
+}
+
+static void write_text(const char *text)
+{
+    unsigned int length = (unsigned int)strlen(text);
+    unsigned int k;
+    for (k = 0; k < length; ++k) {
+        output_checksum ^= (unsigned char)text[k];
+        output_checksum *= 16777619u;
+    }
+    while (length > 0 && !output_error) {
+        unsigned int available = OUTPUT_BUFFER_SIZE - output_used;
+        unsigned int amount;
+        if (available == 0) { flush_output(); available = OUTPUT_BUFFER_SIZE; }
+        amount = length < available ? length : available;
+        memcpy(output_buffer + output_used, text, amount);
+        output_used += amount;
+        text += amount;
+        length -= amount;
+    }
+}
+
+static void write_line(const char *text)
+{
+    write_text(text);
+    if (!output_error) write_text("\n");
+}
+
 int telemetry_init(const char *build_id, const char *elf_path)
 {
     int i;
     record_count = 0;
     render_event_count = 0;
+    render_events_dropped = 0;
+    flush_count = 0;
+    output_used = 0;
+    output_error = 0;
     snprintf(build_name, sizeof(build_name), "%s", build_id ? build_id : "unknown");
     snprintf(launch_path, sizeof(launch_path), "%s", elf_path ? elf_path : "unknown");
 
@@ -69,12 +132,24 @@ int telemetry_init(const char *build_id, const char *elf_path)
     fileXioInit();
 
     for (i = 0; i < 50; ++i) {
-        int fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0666);
-        if (fd >= 0) {
-            const char *probe = "# FNF PS2 telemetry initialized\n";
-            write(fd, probe, strlen(probe));
-            close(fd);
+        log_fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0666);
+        if (log_fd >= 0) {
+            char line[512];
             usb_ready = 1;
+            /* O cabecalho sai no init, nao no fim: se o port travar no meio, o
+               arquivo jah comeca dizendo que build eh este e em que modo. */
+            output_checksum = 2166136261u;
+            snprintf(line, sizeof(line), "# FNF PS2 TELEMETRIA CONTINUA build=%.63s", build_name);
+            write_line(line);
+            snprintf(line, sizeof(line), "# elf=%.255s", launch_path);
+            write_line(line);
+            write_line("# physical=640x448 logical=1280x720 region=NTSC framebuffer=PSMCT32 buffering=double");
+            write_line("# scope=title,main_menu,story_menu,tutorial audio=audsrv pcm=s16le stereo=48000Hz");
+            write_line("# formato: uma linha por evento; tudo em texto, ordenado por emissao");
+            write_line("# colunas estado: quadro,ui,target,sel,nivel,diff,trans_frame,trans,transport,audio_on,audio_tocando,menu_susp,chart,tut_pronta,tut_audio,story_assets,menu_cache,title_anim,gf_up,bf_up,gf16_up,story_gf_up,story_bf_up,aspect169,vp360,music_clock,enviado,ring,underruns,fd_audio,fd_title,acertos,erros,combo,pontos,feedback,cursor_eventos");
+            write_line("# colunas quadro: quadro,begin,draw,vsync,draw_ticks,espera_ticks,total,fps,pressed,anim,anim_frame,asset_frame,quads,qwords,ui,trans,ouvido,fila_audio,ring,underruns");
+            flush_output();
+            fsync(log_fd);
             return 0;
         }
         DelayThread(100000);
@@ -85,7 +160,12 @@ int telemetry_init(const char *build_id, const char *elf_path)
 void telemetry_event(const char *name, int a, int b)
 {
     render_event_t *e;
-    if (render_event_count >= MAX_RENDER_EVENTS) return;
+    if (render_event_count >= MAX_RENDER_EVENTS) {
+        /* Conta o que foi descartado em vez de engolir em silencio: um buraco
+           no log que ninguem ve eh pior que um numero dizendo que houve buraco. */
+        render_events_dropped++;
+        return;
+    }
     e=&render_events[render_event_count++];e->ticks=GetTimerSystemTime();
     snprintf(e->name,sizeof(e->name),"%s",name?name:"unknown");e->a=a;e->b=b;
 }
@@ -117,67 +197,51 @@ void telemetry_frame(u32 frame, u64 begin, u64 after_draw, u64 after_vsync,
     r->underruns = underruns;
 }
 
-/* usbhdfsd proved more reliable on the SCPH-90006 with small committed blocks. */
-#define OUTPUT_BUFFER_SIZE 4096
-static char output_buffer[OUTPUT_BUFFER_SIZE];
-static unsigned int output_used;
-static unsigned int output_checksum;
-static int output_error;
-
-static void flush_output(int fd)
+void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
+                     int story_level, int story_diff, int transition_frame,
+                     int transitions, int transport_state, int audio_started,
+                     int audio_playing, int menu_audio_suspended,
+                     int chart_status, int tutorial_scene_ready,
+                     int tutorial_audio_status, int story_assets_ready,
+                     int menu_cache_ready, int title_anim_status,
+                     int gf_uploaded, int bf_uploaded, int gf16_uploaded,
+                     int story_gf_uploaded, int story_bf_uploaded,
+                     int aspect_169, int viewport_360,
+                     u32 music_clock, u32 audio_submitted, u32 ring_level,
+                     u32 underruns, int audio_fd, int title_audio_fd,
+                     int note_hits, int note_misses, int note_combo,
+                     int note_score, int note_feedback, int event_cursor)
 {
-    unsigned int done = 0;
-    while (done < output_used) {
-        int result = write(fd, output_buffer + done, output_used - done);
-        if (result <= 0) { output_error = 1; break; }
-        done += (unsigned int)result;
-    }
-    /* usbhdfsd não aceita fsync repetido entre blocos de forma confiável.
-     * A sincronização é feita uma única vez depois do rodapé. */
-    output_used = 0;
-}
-
-static void write_text(int fd, const char *text)
-{
-    unsigned int length = (unsigned int)strlen(text);
-    unsigned int k;
-    for (k = 0; k < length; ++k) {
-        output_checksum ^= (unsigned char)text[k];
-        output_checksum *= 16777619u;
-    }
-    while (length > 0 && !output_error) {
-        unsigned int available = OUTPUT_BUFFER_SIZE - output_used;
-        unsigned int amount;
-        if (available == 0) { flush_output(fd); available = OUTPUT_BUFFER_SIZE; }
-        amount = length < available ? length : available;
-        memcpy(output_buffer + output_used, text, amount);
-        output_used += amount;
-        text += amount;
-        length -= amount;
-    }
-}
-
-int telemetry_finish(void)
-{
-    int fd;
-    u32 i;
     char line[512];
-    if (!usb_ready) return -1;
-    fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0666);
-    if (fd < 0) return -2;
-    output_used = 0;
-    output_error = 0;
-    output_checksum = 2166136261u;
+    if (!usb_ready) return;
+    snprintf(line, sizeof(line),
+        "S,%u,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u,%u,%d,%d,%d,%d,%d,%d,%d,%d",
+        frame, ui_state, target_state, selection, story_level, story_diff,
+        transition_frame, transitions, transport_state, audio_started,
+        audio_playing, menu_audio_suspended, chart_status, tutorial_scene_ready,
+        tutorial_audio_status, story_assets_ready, menu_cache_ready,
+        title_anim_status, gf_uploaded, bf_uploaded, gf16_uploaded,
+        story_gf_uploaded, story_bf_uploaded, aspect_169, viewport_360,
+        music_clock, audio_submitted, ring_level, underruns, audio_fd,
+        title_audio_fd, note_hits, note_misses, note_combo, note_score,
+        note_feedback, event_cursor);
+    write_line(line);
+}
 
-    write_text(fd, "# FNF PS2 MENU TELEMETRY 0.2.13\n");
-    snprintf(line, sizeof(line), "# build=%.63s\n", build_name); write_text(fd, line);
-    snprintf(line, sizeof(line), "# elf=%.255s\n", launch_path); write_text(fd, line);
-    write_text(fd, "# physical=640x448 logical=1280x720 region=NTSC framebuffer=PSMCT32 buffering=double\n");
-    write_text(fd, "# scope=title,main_menu,story_menu,tutorial audio=audsrv pcm=s16le stereo=48000Hz\n");
-    write_text(fd, "# frame_data=timing,input,animation,render_cost,ui_state,audio_queue_and_ring\n");
-    snprintf(line, sizeof(line), "# timer_hz=%d records=%u max_records=%d\n",
-             kBUSCLK, record_count, MAX_FRAMES); write_text(fd, line);
-    write_text(fd, "frame,begin_ticks,draw_done_ticks,vsync_done_ticks,draw_ticks,vsync_wait_ticks,total_ticks,fps_est,pressed,animation,animation_frame,asset_frame,textured_quads,qwords,state,transitions,audio_heard_samples,audio_queued_bytes,ring_level_bytes,underruns\n");
+void telemetry_io(const char *op, const char *path, long result, long detail)
+{
+    char line[512];
+    if (!usb_ready) return;
+    snprintf(line, sizeof(line), "IO,%s,%s,%ld,%ld",
+             op ? op : "?", path ? path : "?", result, detail);
+    write_line(line);
+}
+
+void telemetry_flush(void)
+{
+    char line[512];
+    u32 i;
+    if (!usb_ready) return;
 
     for (i = 0; i < record_count && !output_error; ++i) {
         frame_record_t *r = &records[i];
@@ -185,26 +249,50 @@ int telemetry_finish(void)
         u64 wait_ticks = r->vsync_done - r->draw_done;
         u64 total = r->vsync_done - r->begin;
         unsigned int fps100 = total ? (unsigned int)(((u64)kBUSCLK * 100ULL) / total) : 0;
-        snprintf(line, sizeof(line), "%u,%llu,%llu,%llu,%llu,%llu,%llu,%u.%02u,0x%04x,%d,%d,%d,%u,%u,%u,%u,%u,%u,%u,%u\n",
+        snprintf(line, sizeof(line), "F,%u,%llu,%llu,%llu,%llu,%llu,%llu,%u.%02u,0x%04x,%d,%d,%d,%u,%u,%u,%u,%u,%u,%u,%u\n",
             r->frame, r->begin, r->draw_done, r->vsync_done, draw_ticks, wait_ticks, total,
             fps100 / 100, fps100 % 100, r->pressed, r->animation, r->animation_frame,
             r->asset_frame, r->textured_quads, r->qwords, r->state, r->transitions,
             r->audio_heard, r->audio_queued, r->ring_level, r->underruns);
-        write_text(fd, line);
+        write_text(line);
+        write_text("\n");
     }
+    record_count = 0;
+
+    for (i = 0; i < render_event_count && !output_error; ++i) {
+        snprintf(line, sizeof(line), "E,%llu,%s,%d,%d",
+                 render_events[i].ticks, render_events[i].name,
+                 render_events[i].a, render_events[i].b);
+        write_line(line);
+    }
+    if (render_events_dropped) {
+        snprintf(line, sizeof(line), "E-DROP,%u eventos descartados por excesso de capacidade", render_events_dropped);
+        write_line(line);
+        render_events_dropped = 0;
+    }
+    render_event_count = 0;
+
+    flush_output();
+    if (!output_error) fsync(log_fd);
+    flush_count++;
+}
+
+int telemetry_finish(void)
+{
+    char line[512];
+    if (!usb_ready) return -1;
+    telemetry_flush();
+    if (output_error) return -3;
     {
         unsigned int data_checksum = output_checksum;
-        snprintf(line, sizeof(line), "# END records=%u fnv1a32=%08x write_error=%d\n",
-                 record_count, data_checksum, output_error);
-        write_text(fd, line);
+        snprintf(line, sizeof(line), "# END flushes=%u fnv1a32=%08x write_error=%d",
+                 flush_count, data_checksum, output_error);
+        write_line(line);
     }
-    flush_output(fd);
-    fsync(fd);
-    close(fd);
-    {
-        int rfd=open(RENDER_LOG_PATH,O_WRONLY|O_CREAT|O_APPEND,0666);u32 j;
-        if(rfd>=0){int n=snprintf(line,sizeof(line),"# build=%s events=%u capacity=%u\nticks,event,a,b\n",build_name,render_event_count,(u32)MAX_RENDER_EVENTS);write(rfd,line,n);
-            for(j=0;j<render_event_count;j++){n=snprintf(line,sizeof(line),"%llu,%s,%d,%d\n",render_events[j].ticks,render_events[j].name,render_events[j].a,render_events[j].b);write(rfd,line,n);}fsync(rfd);close(rfd);}
-    }
-    return output_error ? -3 : (int)record_count;
+    flush_output();
+    fsync(log_fd);
+    close(log_fd);
+    log_fd = -1;
+    usb_ready = 0;
+    return (int)record_count;
 }
