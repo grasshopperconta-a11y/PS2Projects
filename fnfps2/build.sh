@@ -9,12 +9,17 @@
 #   ./build.sh --clean      delete every object and start over
 #   ./build.sh --tests      run only the offline suite (no PS2 toolchain needed)
 #   ./build.sh --check-assets  verify every asset the port reads is present
+#   ./build.sh --assets-dir=D  also look for the assets in D
 #   ./build.sh --help
 #
 # The offline suite runs first on purpose: it is pure C plus Python, it needs no
 # toolchain, and it catches the mistakes that are expensive to find in a PS2
 # build. A chart that does not load or a chart-events regression fails here in
 # about ten seconds instead of after a full compile.
+#
+# The assets are looked for in assets/ first and then in a shared folder, so the
+# 65 MB is downloaded once and every version of the port finds it. See
+# find_asset_dirs below for the places it looks.
 #
 # The toolchain is NOT built here. It cannot be: this sandbox has no network
 # access to the archives it needs, and the PS2 SDK's own build wants bison, flex,
@@ -51,6 +56,8 @@ while [ $# -gt 0 ]; do
         --check-assets) DO_BUILD=0; DO_TESTS=0; DO_VALIDATE=0; DO_DEPLOY=0; CHECK_ASSETS=1 ;;
         --clean)   DO_CLEAN=1 ;;
         --no-tests) DO_TESTS=0 ;;
+        --assets-dir) shift; FNF_ASSETS="${1:-}" ;;
+        --assets-dir=*) FNF_ASSETS="${1#--assets-dir=}" ;;
         --jobs)    shift; JOBS="${1:-}" ;;
         --jobs=*)  JOBS="${1#--jobs=}" ;;
         --elf)     shift; TARGET="${1:-}" ;;
@@ -113,6 +120,45 @@ find_toolchain() {
     return 1
 }
 
+# Where the 65 MB of runtime assets may already be sitting. They are the same
+# for every version of the port -- converted textures and audio, not code -- so
+# the point of looking in more than one place is that a download happens once
+# instead of once per package. The project's own assets/ is always first: it is
+# where a missing file is told to go, and a file there wins over the shared
+# copy, so a version can override one asset without touching the others.
+#
+# The shared folder is called FNFPS2-assets and is looked for next to the
+# project, next to the project's parent, and in the usual Downloads. The
+# /mnt/c glob covers WSL, where $HOME is a Linux path that has never heard of
+# the user's Downloads.
+ASSET_DIRS="assets"
+find_asset_dirs() {
+    ASSET_DIRS="assets"
+    for d in \
+        "${FNF_ASSETS:-}" \
+        "$HERE/../FNFPS2-assets" \
+        "$HERE/../../FNFPS2-assets" \
+        "${FNF_SRC:+$FNF_SRC/../FNFPS2-assets}" \
+        "${FNF_SRC:+$FNF_SRC/../../FNFPS2-assets}" \
+        "$HOME/Downloads/FNFPS2-assets" \
+        /mnt/c/Users/*/Downloads/FNFPS2-assets
+    do
+        [ -n "$d" ] || continue
+        [ -d "$d" ] || continue
+        case " $ASSET_DIRS " in
+            *" $d "*) ;;
+            *) ASSET_DIRS="$ASSET_DIRS $d" ;;
+        esac
+    done
+}
+
+# Resolved here, and not earlier: a shell function has to be defined before it
+# is called, and an earlier version called it from just above the output setup
+# -- before this definition, seventy lines further down. The call silently did
+# nothing, so --check-assets looked in assets/ alone and reported every shared
+# asset as missing.
+find_asset_dirs
+
 # ------------------------------------------------------------------- start
 
 START=$(date +%s)
@@ -138,7 +184,7 @@ fi
 if [ "$CHECK_ASSETS" = 1 ]; then
     step "checking the assets the port reads at runtime"
     [ -d assets ] || mkdir -p assets
-    python3 tools/check_assets.py assets --links
+    python3 tools/check_assets.py $ASSET_DIRS --links
     rc=$?
     if [ "$rc" = 0 ]; then
         printf '\n    %sok%s   every asset the port needs is on disk\n\n' "$C_GRN" "$C_OFF"
@@ -360,14 +406,30 @@ if [ "$DO_DEPLOY" = 1 ]; then
     # than fail, stage what is here and report the gaps against the manifest,
     # so the user knows exactly what to copy across. A wrong size means a
     # truncated download, which is the usual way a pendrive copy goes wrong.
-    if [ -d assets ] && [ -n "$(ls -A assets 2>/dev/null)" ]; then
-        cp -r assets/. "$OUT/FNFPS2/assets/" 2>/dev/null
-        ok "assets -> $OUT/FNFPS2/assets/ ($(find "$OUT/FNFPS2/assets" -type f | wc -l | tr -d ' ') files)"
-    else
-        warn "no assets/ directory in the workspace"
-    fi
+    #
+    # Staged from every directory find_asset_dirs found, project first: a file
+    # already in assets/ is not overwritten by the shared copy, so one version
+    # can override a single asset without forking the whole 65 MB.
+    # Staged by the manifest, not by copying the directory: only files the port
+    # actually reads are laid out, and a truncated file in assets/ cannot shadow
+    # a complete copy in the shared folder, because the size is what decides.
+    # Copying the directory used to put .gitkeep and LEIA-ME.txt on the memory
+    # card, which is bookkeeping with no business being there.
     if command -v python3 >/dev/null 2>&1; then
-        python3 tools/check_assets.py assets --missing-only || true
+        # Word-split on purpose: ASSET_DIRS is a list of directories.
+        # shellcheck disable=SC2086
+        python3 tools/check_assets.py $ASSET_DIRS --stage-into "$OUT/FNFPS2/assets" || true
+    else
+        for d in $ASSET_DIRS; do
+            [ -d "$d" ] || continue
+            cp -rn "$d"/. "$OUT/FNFPS2/assets/" 2>/dev/null
+        done
+    fi
+    ok "assets -> $OUT/FNFPS2/assets/ ($(find "$OUT/FNFPS2/assets" -type f | wc -l | tr -d ' ') files)"
+    if command -v python3 >/dev/null 2>&1; then
+        # Word-split on purpose: ASSET_DIRS is a list of directories.
+        # shellcheck disable=SC2086
+        python3 tools/check_assets.py $ASSET_DIRS --missing-only || true
     fi
 
     # The charts, laid out the way the registry expects them. --deploy-only

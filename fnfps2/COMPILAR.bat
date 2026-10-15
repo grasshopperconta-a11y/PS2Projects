@@ -22,6 +22,7 @@ REM     COMPILAR.bat --so-compilar       para no passo 5, nao copia
 REM     COMPILAR.bat --so-assets         so confere os assets
 REM     COMPILAR.bat --limpar            apaga objetos e saida, comeca do zero
 REM     COMPILAR.bat --rapido            -O1 em vez de -O2, itera mais rapido
+REM     COMPILAR.bat --assets-dir=P      onde estao os 65 MB de assets
 REM     COMPILAR.bat --distro=NOME       forca uma distro WSL especifica
 REM     COMPILAR.bat --ps2dev=/caminho   diz onde o ps2sdk esta'
 REM     COMPILAR.bat --ajuda             a lista completa
@@ -54,6 +55,7 @@ set "EXTRA="
 set "DO_COPY=1"
 set "DO_TOOLCHAIN=0"
 set "DO_ASSETS_ONLY=0"
+set "ASSETS_OPT="
 
 REM ---------------------------------------------------------------- arguments
 
@@ -62,13 +64,19 @@ for %%A in (%*) do (
     if /i "%%~A"=="--so-compilar"    set "DO_COPY=0"
     if /i "%%~A"=="--so-assets"      set "DO_ASSETS_ONLY=1"
     if /i "%%~A"=="--limpar"         set "EXTRA=!EXTRA! --clean"
-    if /i "%%~A"=="--rapido"         set "EXTRA=!EXTRA! --fast"
+    if /i "%%~A"=="--rapido"            set "EXTRA=!EXTRA! --fast"
     if /i "%%~A"=="--ajuda"          goto :help
     for /f "tokens=1,2 delims==" %%X in ("%%~A") do (
         if /i "%%~X"=="--ps2dev" set "PS2DEV=%%~Y"
         if /i "%%~X"=="--distro" set "DISTRO_OVERRIDE=%%~Y"
+        if /i "%%~X"=="--assets-dir" set "ASSETS_DIR=%%~Y"
     )
 )
+
+REM A pasta compartilhada de assets. Sem --assets-dir o build.sh acha
+REM sozinho -- veja find_asset_dirs la dentro --, entao isto so
+REM existe para apontar para um lugar fora do padrao.
+if defined ASSETS_DIR set "ASSETS_OPT=--assets-dir=!ASSETS_DIR!"
 
 REM ------------------------------------------------------------------- header
 
@@ -230,7 +238,7 @@ echo [5/7] Compilando...
 echo.
 
 if "%DO_ASSETS_ONLY%"=="1" (
-    !WSLRUN! !WSLEX! sh -c "cd '!WSLPATH!' && PS2DEV='!PS2DEV!' ./build.sh --check-assets !EXTRA!"
+    !WSLRUN! !WSLEX! sh -c "cd '!WSLPATH!' && PS2DEV='!PS2DEV!' ./build.sh --check-assets !ASSETS_OPT! !EXTRA!"
     echo.
     echo   Abrindo a lista de links no seu navegador...
     echo   Baixe cada arquivo e mova para:  %HERE%\assets\
@@ -245,7 +253,7 @@ REM write cruza para o Windows e volta. Um build de PS2 toca algumas centenas
 REM de arquivos varias vezes, entao compilar ali eh minutos em vez de segundos
 REM -- e piora a medida que a arvore cresce. tools/wsl-run.sh copia a arvore
 REM para la', compila, e traz de volta so' o que interessa.
-!WSLRUN! !WSLEX! sh "!WSLPATH!/tools/wsl-run.sh" "!WSLPATH!" "!PS2DEV!" --deploy !EXTRA!
+!WSLRUN! !WSLEX! sh "!WSLPATH!/tools/wsl-run.sh" "!WSLPATH!" "!PS2DEV!" --deploy !ASSETS_OPT! !EXTRA!
 if errorlevel 1 goto :falhou
 
 if not exist "%HERE%\build\ps2\FNFPS2\assets\audio_stems.pcm" (

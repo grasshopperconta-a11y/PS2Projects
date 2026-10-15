@@ -21,6 +21,12 @@ PS2DEV=$1; shift
 [ -d "$SRC" ] || { echo "wsl-run.sh: $SRC is not a directory" >&2; exit 2; }
 
 export PS2DEV
+# The build runs in a copy, under $HOME, so a shared assets folder that sits
+# next to the original tree on the Windows side is not a sibling of $WORK. Pass
+# the original path so find_asset_dirs can look next to it too -- without this,
+# --assets-dir and the sibling search only ever find folders that happen to be
+# reachable from $HOME.
+export FNF_SRC="$SRC"
 WORK="$HOME/FNFPS2-build"
 
 rm -rf "$WORK"
