@@ -246,32 +246,7 @@ REM de arquivos varias vezes, entao compilar ali eh minutos em vez de segundos
 REM -- e piora a medida que a arvore cresce. tools/wsl-run.sh copia a arvore
 REM para la', compila, e traz de volta so' o que interessa.
 !WSLRUN! !WSLEX! sh "!WSLPATH!/tools/wsl-run.sh" "!WSLPATH!" "!PS2DEV!" --deploy !EXTRA!
-if errorlevel 1 (
-    echo.
-    echo ============================================================
-    echo   O BUILD FALHOU.
-    echo ============================================================
-    echo.
-REM build.sh agora guarda o log da suite offline com o nome build.log,
-REM que antes so' existia quando a compilacao do PS2 chegava a rodar. Se
-REM por acaso nenhum dos dois existir, diz isso em vez de apontar para um
-REM arquivo fantasma.
-    if exist "%HERE%\build.log" (
-        echo   O log completo esta' em:
-        echo       %HERE%\build.log
-    ) else if exist "%HERE%\build-tests.log" (
-        echo   O log completo esta' em:
-        echo       %HERE%\build-tests.log
-    ) else (
-        echo   Nao achei build.log nem build-tests.log em:
-        echo       %HERE%
-        echo   Me manda uma foto da tela inteira acima.
-    )
-    echo.
-    echo   Me manda esse arquivo que eu resolvo.
-    echo.
-    pause & exit /b 1
-)
+if errorlevel 1 goto :falhou
 
 if not exist "%HERE%\build\ps2\FNFPS2\assets\audio_stems.pcm" (
     echo.
@@ -355,6 +330,47 @@ pause
 exit /b 0
 
 REM ------------------------------------------------------------------ helpers
+
+REM O build morreu. Fora de bloco parentesiado, de proposito: if/else aninhado
+REM dentro de um bloco funciona, mas eh onde o parser do cmd.exe se perde, e
+REM um erro de parse aqui esconderia exatamente a mensagem que o usuario precisa
+REM ler. Com goto, cada teste eh uma linha simples.
+:falhou
+echo.
+echo ============================================================
+echo   O BUILD FALHOU.
+echo ============================================================
+echo.
+REM build.sh agora guarda o log da suite offline com o nome build.log, que
+REM antes so' existia quando a compilacao do PS2 chegava a rodar. Se por
+REM acaso nenhum dos dois existir, diz isso em vez de apontar para um
+REM arquivo fantasma.
+if exist "%HERE%\build.log" goto :log_principal
+if exist "%HERE%\build-tests.log" goto :log_testes
+echo   Nao achei build.log nem build-tests.log em:
+echo       %HERE%
+echo   Me manda uma foto da tela inteira acima.
+echo.
+pause
+exit /b 1
+
+:log_principal
+echo   O log completo esta' em:
+echo       %HERE%\build.log
+echo.
+echo   Me manda esse arquivo que eu resolvo.
+echo.
+pause
+exit /b 1
+
+:log_testes
+echo   O log completo esta' em:
+echo       %HERE%\build-tests.log
+echo.
+echo   Me manda esse arquivo que eu resolvo.
+echo.
+pause
+exit /b 1
 
 :no_wsl
 echo.
