@@ -126,37 +126,45 @@ e a implementação do interpretador GIF.
 
 ---
 
-## 4. Risco encontrado agora: o projeto NÃO é auto-contido
+## 4. Os assets de runtime: onde estão, e como verificá-los
 
-O `main.c` abre 21 caminhos em `mass:/`. Destes, os assets de runtime
-que ficam em `mass:/SAIDA_PS2/assets/` **não existem no workspace**:
+O `main.c` abre 21 caminhos em `mass:/`. Os assets de runtime que ficam em
+`mass:/FNFPS2/assets/` **não vivem no repositório**: são texturas e áudio já
+convertidos, cerca de 65 MB, então ficam no Google Drive.
 
-| asset | no workspace? |
+**Resolvido em 2026-10-15.** A pasta pedida no item 6 abaixo está no Drive, e
+ela contém duas gerações de `assets/`: a mais nova,
+`1XEb6Q9tRfOZU5iGjnXfYyxFzpCicYfD3`, é a que tem todos os 16 arquivos que o
+runtime lê, com os nomes que o `main.c` usa hoje. A geração anterior
+(`SAIDA_PS2/assets/`) usa nomes antigos — `bf.frames` em vez de
+`bf_frames.lz4f`, `mainstage_tutorial.rgba` em vez de
+`mainstage_tutorial_parallax.rgba` — e não serve.
+
+| asset | na pasta nova? |
 |---|---|
-| `bf_frames.lz4f` | sim (`fix66-0.2.42/assets/`) |
-| `gf_frames.lz4f` | sim |
-| `mainstage_tutorial_feet.rgba` | sim |
-| `tutorial_hud_official_320x256_gsalpha.rgba` | sim |
-| `menu_cache.rle` | sim (`google_drive/`) |
-| **`font.rgba`** | **não** |
-| **`font.widths`** | **não** |
-| **`freakyMenu_48000.pcm`** | **não** |
-| **`menu_sfx.pcm`** | **não** |
-| **`audio_stems.pcm`** | **não** |
-| **`test.chart`** | **não** |
-| **`title_alphabet.rgba`** | **não** |
-| **`title_newgrounds.rgba`** | **não** |
-| **`title_prompt_l.rgba`** | **não** |
-| **`title_prompt_r.rgba`** | **não** |
-| **`title_logoBumpin.frames`** | **não** |
-| **`title_gfDanceTitle.frames`** | **não** |
+| `bf_frames.lz4f` | sim (1.239.417 B) |
+| `gf_frames.lz4f` | sim (1.375.989 B) |
+| `mainstage_tutorial_parallax.rgba` | sim (524.288 B) |
+| `tutorial_hud_official_320x256_gsalpha.rgba` | sim (327.680 B) |
+| `menu_cache.rle` | sim (1.623.445 B) |
+| `font.rgba` | sim (294.912 B) |
+| `font.widths` | sim (96 B) |
+| `freakyMenu_48000.pcm` | sim (21.687.068 B) |
+| `menu_sfx.pcm` | sim (281.088 B) |
+| `audio_stems.pcm` | sim (25.804.800 B) |
+| `test.chart` | sim (1.364 B) |
+| `title_alphabet.rgba` | sim (294.912 B) |
+| `title_newgrounds.rgba` | sim (126.700 B) |
+| `title_prompt_l.rgba` | sim (393.216 B) |
+| `title_prompt_r.rgba` | sim (245.760 B) |
+| `title_logoBumpin.frames` | sim (4.608.000 B) |
+| `title_gfDanceTitle.frames` | sim (7.219.200 B) |
 
-Doze assets existem **apenas no seu pendrive**. Consequências:
-
-- Se o pendrive falhar, o build vira um ELF que não roda e não há como
-  regenerar os assets sem refazer todo o pipeline de conversão.
-- O BEPC não consegue renderizar Title nem Menu sem eles.
-- Nenhum modelo que pegar este projeto depois consegue validar nada.
+`assets-manifest.json` guarda, para cada arquivo, o id no Drive e o tamanho em
+bytes. `./build.sh --check-assets` confere o que está em `assets/` contra esse
+manifesto: arquivo ausente é listado com seu id, e arquivo com tamanho errado é
+tratado como download interrompido — que é o modo mais comum de uma cópia para
+o pendrive dar errado. `--deploy` roda a mesma verificação ao preparar o cartão.
 
 Observação: `assets/title_logoBumpin.lz4f` e
 `assets/title_gfDanceTitle.lz4f` estão embutidos no ELF via
@@ -170,7 +178,7 @@ runtime lê de `mass:/` são outros arquivos.
 | Etapa | Entrega | Depende de |
 |---|---|---|
 | **E0** | Build reproduzido e hash-verificado | **feito** |
-| **E1** | Assets de runtime no workspace | **você** |
+| **E1** | Assets de runtime no workspace | **feito** |
 | **E2** | BEPC compila `main.c` nativamente, sem alterar uma linha do fonte | E1 |
 | **E3** | Interpretador GIF + rasterizador do subconjunto → PNG 640×448 por quadro | E2 |
 | **E4** | Relógio de áudio determinístico + pad roteirizado; suíte de asserções de timing (Bopper, Conductor, chart) | E3 |
@@ -181,10 +189,15 @@ runtime lê de `mass:/` são outros arquivos.
 
 ## 6. O que preciso de você
 
-**Suba a pasta `SAIDA_PS2` inteira do pendrive para o Drive**, de
-preferência zipada (`SAIDA_PS2.zip`). É o único item bloqueante.
+Nada sobre assets: estão todos no Drive, conferidos por
+`./build.sh --check-assets`.
 
-Se ficar acima de 100 MB, divida ou mande só
-`SAIDA_PS2/assets/` — é o que importa.
+O que segue bloqueando é a **validação no console**. O fluxo é:
 
-Com ela eu fecho E2 e E3 sem precisar de mais nada seu.
+    ./build.sh                 # suíte offline + build + validação do ELF
+    ./build.sh --check-assets  # confere os 16 assets em assets/
+    ./build.sh --deploy        # monta build/ps2/FNFPS2/
+
+Aí copie `build/ps2/FNFPS2/` para o cartão como `mass:/FNFPS2/` e me conte o
+primeiro erro que aparecer. A parte de compilar é você: este sandbox não
+consegue baixar o ps2sdk (ver §10.7 em `SOURCE_ANALYSIS_0.2.105.md`).

@@ -8,6 +8,7 @@
 #   ./build.sh --quick      build only, skip the offline suite and validation
 #   ./build.sh --clean      delete every object and start over
 #   ./build.sh --tests      run only the offline suite (no PS2 toolchain needed)
+#   ./build.sh --check-assets  verify every asset the port reads is present
 #   ./build.sh --help
 #
 # The offline suite runs first on purpose: it is pure C plus Python, it needs no
@@ -36,6 +37,7 @@ FAST=0
 DO_VALIDATE=1
 DO_DEPLOY=0
 DO_CLEAN=0
+CHECK_ASSETS=0
 JOBS=""
 TARGET="fnf_ps2_m84.elf"
 
@@ -46,6 +48,7 @@ while [ $# -gt 0 ]; do
         --fast)    FAST=1 ;;
         --quick)   DO_TESTS=0; DO_VALIDATE=0 ;;
         --tests)   DO_BUILD=0; DO_VALIDATE=0 ;;
+        --check-assets) DO_BUILD=0; DO_TESTS=0; DO_VALIDATE=0; DO_DEPLOY=0; CHECK_ASSETS=1 ;;
         --clean)   DO_CLEAN=1 ;;
         --no-tests) DO_TESTS=0 ;;
         --jobs)    shift; JOBS="${1:-}" ;;
@@ -112,6 +115,23 @@ if [ "$DO_CLEAN" = 1 ]; then
     make clean >/dev/null 2>&1
     rm -rf build
     ok "objects and build output removed"
+fi
+
+# ---------------------------------------------------------------- the assets
+
+# The sixteen assets main.c opens at runtime are not in the repository -- they
+# are converted textures and audio totalling about 65 MB, so they live in
+# Google Drive. This checks what is on disk against the manifest, so a partial
+# copy to the pendrive is caught here instead of on the console.
+if [ "$CHECK_ASSETS" = 1 ]; then
+    step "checking the assets the port reads at runtime"
+    [ -d assets ] || mkdir -p assets
+    python3 tools/check_assets.py assets
+    rc=$?
+    if [ "$rc" = 0 ]; then
+        printf '\n    %sok%s   every asset the port needs is on disk\n\n' "$C_GRN" "$C_OFF"
+    fi
+    exit "$rc"
 fi
 
 # --------------------------------------------------- offline suite, no SDK
@@ -265,14 +285,18 @@ if [ "$DO_DEPLOY" = 1 ]; then
     cp "$TARGET" "$OUT/FNFPS2/" || die "could not copy the ELF"
     ok "ELF -> $OUT/FNFPS2/$(basename "$TARGET")"
 
-    # The assets are not in the workspace: twelve of them exist only on the
-    # pendrive. Rather than fail, stage what is here and list what is missing,
-    # so the user knows exactly what to copy across.
+    # The assets are not in the workspace: they live in Google Drive. Rather
+    # than fail, stage what is here and report the gaps against the manifest,
+    # so the user knows exactly what to copy across. A wrong size means a
+    # truncated download, which is the usual way a pendrive copy goes wrong.
     if [ -d assets ] && [ -n "$(ls -A assets 2>/dev/null)" ]; then
         cp -r assets/. "$OUT/FNFPS2/assets/" 2>/dev/null
         ok "assets -> $OUT/FNFPS2/assets/ ($(find "$OUT/FNFPS2/assets" -type f | wc -l | tr -d ' ') files)"
     else
         warn "no assets/ directory in the workspace"
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 tools/check_assets.py assets --missing-only || true
     fi
 
     # The charts, laid out the way the registry expects them.
@@ -289,18 +313,8 @@ if [ "$DO_DEPLOY" = 1 ]; then
     fi
 
     printf '\n    Copy %s/FNFPS2/ to the memory card as mass:/FNFPS2/\n\n' "$OUT"
-    printf '    The port also reads these, which are not in the workspace and\n'
-    printf '    must come from the pendrive:\n'
-    for a in bf_frames.lz4f gf_frames.lz4f mainstage_tutorial_parallax.rgba \
-             font.rgba font.widths freakyMenu_48000.pcm menu_sfx.pcm \
-             audio_stems.pcm menu_cache.rle \
-             tutorial_hud_official_320x256_gsalpha.rgba \
-             title_alphabet.rgba title_newgrounds.rgba \
-             title_prompt_l.rgba title_prompt_r.rgba \
-             title_logoBumpin.frames title_gfDanceTitle.frames; do
-        printf '      assets/%s\n' "$a"
-    done
-    printf '\n'
+    printf '    Anything still missing is listed above with its Drive file id;\n'
+    printf '    the whole set is in assets-manifest.json.\n\n'
 fi
 
 printf '%sdone%s in %ss\n\n' "$C_GRN" "$C_OFF" "$(($(date +%s) - START))"

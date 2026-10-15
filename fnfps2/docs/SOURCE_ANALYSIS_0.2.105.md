@@ -971,3 +971,77 @@ What is still the tutorial's, deliberately: the scene. main.c loads
 name, and the stage texture is still the fixed 512x256 that section 10.1 says is
 wrong for every stage but the two smallest. Making the scene take a song
 descriptor is the next step, and it is a bigger one than this rename.
+
+### 10.7 `build.sh`: one command, and an honest message when the toolchain is absent
+
+`build.sh` replaces `compilar.sh`, which is now a ten-line wrapper that `exec`s
+it, so the habit of running `./compilar.sh` still works.
+
+    ./build.sh               offline suite -> build -> validate the ELF
+    ./build.sh --deploy      build, then stage the memory-card layout
+    ./build.sh --deploy-only stage from the ELF already there, skip the build
+    ./build.sh --fast        -O1 instead of -O2, to iterate
+    ./build.sh --quick       build only, skip the suite and validation
+    ./build.sh --clean
+    ./build.sh --jobs N
+    ./build.sh --elf NAME
+    ./build.sh --tests       offline suite only, no PS2 toolchain
+    ./build.sh --check-assets
+    ./build.sh --help
+
+**The offline suite runs first, on purpose.** It is pure C plus Python, needs no
+toolchain, and catches the expensive mistakes: a chart that does not load, a
+chart-events regression, a registry that points at a path the converter does not
+produce. That fails in about ten seconds instead of after a full compile.
+
+**The toolchain is not built here and cannot be.** The sandbox's egress is
+limited to github.com, codeload.github.com, api.github.com, registry.npmjs.org,
+pypi.org and files.pythonhosted.org. GitHub release assets redirect to
+objects.githubusercontent.com, which is blocked, so no prebuilt ps2sdk is
+obtainable; and the SDK's own build wants bison, flex, m4, texinfo, autoconf,
+automake, libtool and cmake, none of which can be installed. So the script
+searches six places -- `$PS2DEV`, `/var/tmp/ps2dev-root/ps2dev`,
+`/usr/local/ps2dev`, `/opt/ps2dev`, `~/ps2dev`, `/usr/local/ps2sdk` -- uses the
+first one it finds, and when it finds none it prints the install command and
+stops with a clear message rather than a confusing compile error.
+
+**`--fast` uses `FNX_EXTRA=-O1`, not an override of `EE_CFLAGS`.** The Makefile
+composes `EE_CFLAGS` from `Makefile.pref`, and `-D_EE` is part of what it
+composes; overriding the variable on the command line discards it and the build
+dies in `tamtypes.h` with an error that has nothing to do with what you changed.
+The Makefile's own comment warns about this. `FNX_EXTRA` is appended after
+`-O2`, so the later flag wins and `-D_EE` survives.
+
+When the build fails, the script greps the log for `error:` lines and prints
+each with two lines of context, then keeps the whole log in `build.log`. The
+full log is also the thing to send when asking for help.
+
+### 10.8 De onde vêm os assets, e como saber se estão todos lá
+
+The 16 files `main.c` opens under `mass:/FNFPS2/assets/` are not in the
+repository. They are converted textures and audio, about 65 MB, and they live in
+Google Drive. `assets-manifest.json` records, for each one, the Drive file id
+and the size in bytes.
+
+Two generations of `assets/` are in Drive. The newer,
+`1XEb6Q9tRfOZU5iGjnXfYyxFzpCicYfD3`, is the one the current `main.c` reads. The
+older one (`SAIDA_PS2/assets/`) uses names the code no longer uses --
+`bf.frames` where the code wants `bf_frames.lz4f`, `mainstage_tutorial.rgba`
+where it wants `mainstage_tutorial_parallax.rgba`, `gameplay_hud.rgba` where it
+wants `tutorial_hud_official_320x256_gsalpha.rgba`. Picking the wrong one
+produces an ELF that compiles and does not get past its first asset read.
+
+`tools/check_assets.py` compares a directory against the manifest. Two things
+can be wrong and both are reported: the file is absent, or it exists with a size
+that differs from the manifest. The second is the one that matters, because that
+is what an interrupted download looks like, and an interrupted download is the
+usual way a copy to a pendrive goes wrong -- nobody checks byte counts by hand.
+
+`./build.sh --check-assets` runs that check on its own, and `--deploy` runs it
+before staging the card. The manifest is the single source of truth: the list
+`--deploy` prints is the same one `--check-assets` uses, so the two cannot drift
+apart.
+
+`title_logoBumpin.lz4f` and `title_gfDanceTitle.lz4f` are embedded in the ELF
+via `.incbin` (`src/title_packs.S`), but the uncompressed `.frames` the runtime
+reads from `mass:/` are different files and are not embedded.
