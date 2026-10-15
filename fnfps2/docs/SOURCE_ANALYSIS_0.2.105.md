@@ -626,18 +626,58 @@ every stage. It can only compute a complete box for `mainStage` right now,
 because it needs each prop's pixel size and the other stages' images are not
 downloaded yet. It says so instead of inventing sizes.
 
-### 9.2 Character JSONs are not what the port needs
+### 9.2 The character data WAS findable -- it is in assets/data/characters/
 
-`assets/shared/characters/<id>/` holds the character folders, but they contain
-**spritemaps and animation data**, not gameplay definitions. The one `bf.json`
-in that tree is a freeplay/results/character-select descriptor (`ownedChars`,
-`freeplayDJ`, `results`, `stickerPack`) -- no `offsets`, no `cameraOffsets`,
-no `singTime`.
+First pass on this was wrong, and worth recording as wrong. The character
+folders under `assets/shared/images/characters/<id>/` hold spritemaps and
+animation data, so I concluded the gameplay numbers had no JSON to diff
+against. They do: `assets/data/characters/<id>.json`, all 46 of them, in the
+same Drive mirror.
 
-So the gameplay character numbers in `bs_dados.h` (`bs_char_t`: `offsets`,
-`cameraOffsets`, `singTime`) do **not** come from a JSON that can be diffed
-the way the stages and songs can. They were extracted from the compiled
-game or from `Character.hx`'s defaults. `bs_dados.h`'s character table is
-therefore still **unverified**, and the checker says so rather than
-implying it was checked. That is a real gap in the fidelity proof and it is
-listed as such.
+`tools/check_bs_chars.py` parses `bs_chars[]` and diffs `offsets`,
+`cameraOffsets` and `singTime` against every JSON, applying the
+`CharacterData.hx` defaults where a JSON omits a field:
+
+```c
+DEFAULT_OFFSETS  = [0, 0]     // used for both offsets and cameraOffsets
+DEFAULT_SINGTIME = 8.0        // in STEPS, not seconds
+```
+
+The result:
+
+```
+bs_dados.h: 46 characters, JSON: 46 files
+checked 46, mismatches: 0
+```
+
+Every one of the 46 characters' `offsets`, `cameraOffsets` and `singTime` in
+`bs_dados.h` is exactly what the game's own JSON says. So the character table
+is **verified**, not merely trusted -- which is the opposite of what the stage
+table deserved and got.
+
+### 9.3 What that confirms about the port's own constants
+
+`singTime` is in **steps**, and `bs_dados.h` carries it as a float for that
+reason. `main.c` holds `TUT_SING_MS 1200` and
+`TUT_SAMPLES_PER_STEP 7200` at 48 kHz:
+
+```
+7200 samples / step / 48000 Hz = 0.150 s per step
+8 steps x 0.150 s              = 1.200 s   == TUT_SING_MS 1200
+```
+
+The tutorial characters use the default `singTime` of 8 steps, and the port's
+`TUT_SING_MS 1200` is exactly that. The constant is right, and now it is
+*shown* to be right rather than assumed.
+
+Two things still are not covered by this:
+
+- `cameraOffsets` is applied **twice** in the original. `Stage.hx` adds the
+  stage's own `stageCharData.cameraOffsets` on top of the character's, and
+  `GameOverSubState.hx` uses the character's alone. `bs_dados.h` carries only
+  the character's, and the stage table carries none -- the 3 slots in
+  `mainStage.json` have `[-100,-100]`, `[150,-100]`, `[0,0]`, which the port
+  approximates with `GF_CAMOFF_X`/`GF_CAMOFF_Y`. Those per-stage values are
+  now known but not yet wired in.
+- `danceEvery` (default 1.0) and `healthIcon` are in the JSONs and are not in
+  `bs_dados.h` at all.
