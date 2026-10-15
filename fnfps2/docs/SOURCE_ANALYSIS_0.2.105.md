@@ -255,3 +255,114 @@ Asset path convention now fixed (and tested):
    table wholesale.
 3. **Per-difficulty `scrollSpeed` and which difficulties each chart has.**
    The registry currently assumes easy/normal/hard at 1.0 for every song.
+
+## 6. Song registry: the real data (2026-10-15)
+
+The registry is no longer transcribed by hand. `tools/gen_song_registry.py`
+renders `src/engine/song_registry_data.inc` from the JSON the user took out
+of their installed copy (`fnfps2/assets-data/`), and `test/run_tests.sh` runs
+the generator with `--check` so the committed C can never drift from the
+committed JSON. Adding a song is now: drop `<id>-metadata.json` in
+`assets-data/songs/`, re-run the generator.
+
+### 6.1 The three questions that were open are answered
+
+| Question | Answer | Source file |
+|---|---|---|
+| sserafim song ids | one song: `spaghetti` | `levels/sserafim.json` -> `"songs"` |
+| stage + characters per song | see the table below | `songs/<id>-metadata.json` -> `playData` |
+| scrollSpeed | **not a song field** | `songs/<id>/charts/<difficulty>.json` -> `scrollSpeed` |
+
+`divisions` is also a chart field, not a song field: `Song.hx` has
+`DEFAULT_DIVISIONS:Null<Int> = null` and does
+`difficulty.divisions = metadata.divisions`. The registry used to carry a
+fabricated `divisions = 96` and `scroll_speed = 1.0f`; both are gone.
+
+### 6.2 Authoritative week grouping
+
+`funkin.ui.story.Level.getSongs()` returns `_data.songs.copy()` -- the JSON
+array, **in JSON order** -- and `InitState.startLevel()` does
+`playlistSongIds.shift()` off the front. So the level JSON is the play order.
+
+The `switch` in `InitState.startSong()` (`case 'high' | 'satin-panties' |
+'milf':`) is a **set membership test**, not a sequence. Reading it as an order
+is what made me write week4 as high/satin-panties/milf; the JSON says
+**satin-panties, high, milf**. Corrected.
+
+| Week | Display name | Background | Songs, in play order |
+|---|---|---|---|
+| `tutorial` | TEACHING TIME | `#F9CF51` | `tutorial` |
+| `week1` | DADDY DEAREST | `#F9CF51` | `bopeebo`, `fresh`, `dadbattle` |
+| `week2` | SPOOKY MONTH | `#F9CF51` | `spookeez`, `south`, `monster` |
+| `week3` | PICO | `#F9CF51` | `pico`, `philly-nice`, `blammed` |
+| `week4` | MOMMY MUST MURDER | `#F9CF51` | `satin-panties`, `high`, `milf` |
+| `week5` | RED SNOW | `#F9CF51` | `cocoa`, `eggnog`, `winter-horrorland` |
+| `week6` | HATING SIMULATOR FT. MOAWLING | `#F9CF51` | `senpai`, `roses`, `thorns` |
+| `week7` | TANKMAN FT. JOHNNYUTAH | `#F9CF51` | `ugh`, `guns`, `stress` |
+| `weekend1` | DUE DEBTS | `#413CAE` | `darnell`, `lit-up`, `2hot`, `blazin` |
+| `sserafim` | LE SSERAFIM | `#F9CF51` | `spaghetti` (capsule: SP. COLLAB 1) |
+
+### 6.3 Every song, from its own metadata
+
+| Song | Week | Player | Girlfriend | Opponent | Stage | BPM | Notes |
+|---|---|---|---|---|---|---|---|
+| `tutorial` | tutorial | `bf` | **--** | `gf` | `mainStage` | 100 | **no gf slot** |
+| `bopeebo` | week1 | `bf` | `gf` | `dad` | `mainStage` | 100 | var: erect, pico |
+| `fresh` | week1 | `bf` | `gf` | `dad` | `mainStage` | 120 | var: erect, pico |
+| `dadbattle` | week1 | `bf` | `gf` | `dad` | `mainStage` | 180 | var: erect, pico |
+| `spookeez` | week2 | `bf` | `gf` | `spooky` | `spookyMansion` | 150 | var: erect, pico |
+| `south` | week2 | `bf` | `gf` | `spooky` | `spookyMansion` | 165 | var: erect, pico |
+| `monster` | week2 | `bf` | `gf` | `monster` | `spookyMansion` | 95 | - |
+| `pico` | week3 | `bf` | `gf` | `pico` | `phillyTrain` | 150 | var: erect, pico |
+| `philly-nice` | week3 | `bf` | `gf` | `pico` | `phillyTrain` | 175 | var: erect, pico |
+| `blammed` | week3 | `bf` | `gf` | `pico` | `phillyTrain` | 165 | var: erect, pico |
+| `satin-panties` | week4 | `bf-car` | `gf-car` | `mom-car` | `limoRide` | 110 | var: erect |
+| `high` | week4 | `bf-car` | `gf-car` | `mom-car` | `limoRide` | 125 | var: erect |
+| `milf` | week4 | `bf-car` | `gf-car` | `mom-car` | `limoRide` | 180 | - |
+| `cocoa` | week5 | `bf-christmas` | `gf-christmas` | `parents-christmas` | `mallXmas` | 100 | var: erect, pico |
+| `eggnog` | week5 | `bf-christmas` | `gf-christmas` | `parents-christmas` | `mallXmas` | 150 | var: erect, pico |
+| `winter-horrorland` | week5 | `bf-christmas` | `gf-christmas` | `monster-christmas` | `mallEvil` | 159 | - |
+| `senpai` | week6 | `bf-pixel` | `gf-pixel` | `senpai` | `school` | 144 | **pixel notes**; var: erect, pico |
+| `roses` | week6 | `bf-pixel` | `gf-pixel` | `senpai-angry` | `school` | 120 | **pixel notes**; var: erect, pico |
+| `thorns` | week6 | `bf-pixel` | `gf-pixel` | `spirit` | `schoolEvil` | 190 | **pixel notes**; var: erect |
+| `ugh` | week7 | `bf` | `gf-tankmen` | `tankman` | `tankmanBattlefield` | 160 | var: erect, pico |
+| `guns` | week7 | `bf` | `gf-tankmen` | `tankman` | `tankmanBattlefield` | 185 | var: pico |
+| `stress` | week7 | `bf-holding-gf` | `pico-speaker` | `tankman` | `tankmanBattlefield` | 178 | var: pico |
+| `darnell` | weekend1 | `pico-playable` | `nene` | `darnell` | `phillyStreets` | 155 | var: bf, erect |
+| `lit-up` | weekend1 | `pico-playable` | `nene` | `darnell` | `phillyStreets` | 176 | var: bf |
+| `2hot` | weekend1 | `pico-playable` | `nene` | `darnell` | `phillyStreets` | 182 | - |
+| `blazin` | weekend1 | `pico-blazin` | `nene` | `darnell-blazin` | `phillyBlazin` | 180 | - |
+| `spaghetti` | sserafim | `sserafim-sakura` | `sserafim-gf` | `sserafim-kazuha` | `sserafim` | 111.5 | - |
+
+### 6.4 What the corrections cost
+
+Entries that were wrong before the JSON arrived, and what they are now:
+
+- **tutorial**: was `bf / gf / dad`. Actually `bf / -- / gf` -- the Tutorial
+  has no girlfriend field at all; the girlfriend *is* the opponent. This also
+  confirms the note in `main.c` ("no Tutorial a GF e a oponente").
+- **week4 order**: was `high, satin-panties, milf`. Actually `satin-panties,
+  `high, milf`.
+- **week4 sprites**: were plain `bf/gf/mom`. Actually `bf-car / gf-car / mom-car`.
+- **week7 player**: was `pico`. Actually `bf` (ugh, guns) and `bf-holding-gf`
+  (stress). The girlfriend is `gf-tankmen`, and stress puts `pico-speaker` in
+  the girlfriend slot.
+- **winter-horrorland**: stage `mallEvil`, opponent `monster-christmas` -- not
+  mallXmas.
+- **noteStyle**: week6 (senpai/roses/thorns) is `pixel`, everything else
+  `funkin`. Two different note atlases.
+- **sserafim**: one song, `spaghetti`, cast `sserafim-sakura / sserafim-gf /
+  `sserafim-kazuha`, stage `sserafim`, 111.5 BPM -- a fractional bpm, so the
+  registry stores it as a float and the test asserts it exactly.
+
+### 6.5 Level metadata the story menu needs
+
+`Level.getTitle()` -> `_data.name`; `getBackgroundColor()` ->
+`FlxColor.fromString(_data.background)`; `buildProps()` places prop *i* at
+`propData.offsets[0] + FlxG.width * 0.25 * i` (1280 * 0.25 = 320 px apart).
+`getDifficulties()` takes the first song's difficulties and keeps only those
+present in **every** song of the week. All ten weeks ship easy/normal/hard,
+so that reduces to the usual three.
+
+Only `weekend1` differs in background (`#413CAE`); the rest are `#F9CF51`.
+Only `sserafim` has a capsule (`SP. COLLAB 1`).
