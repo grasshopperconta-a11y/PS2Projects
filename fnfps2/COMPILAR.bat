@@ -170,11 +170,29 @@ REM --------------------------------------------- 4. achar o ps2sdk no WSL
 
 echo [4/7] Procurando o ps2sdk...
 set "FOUND="
-REM A busca roda dentro de um script, nao num laco aqui. Pipe de saida de
-REM shell pelo for /f do cmd.exe significa escapar ||, $ e aspas para um
-REM segundo parser; um laco batch com set dentro de bloco eh onde nasceu o
-REM "set foi inesperado neste momento". Um parser so', e testavel.
-for /f "usebackq tokens=*" %%P in (`!WSLRUN! !WSLEX! sh "!WSLPATH!/tools/find_ps2dev.sh"`) do set "FOUND=%%P"
+REM A busca roda dentro de um script, nao num laco aqui. Duas razoes:
+REM
+REM  1. Um laco batch com set dentro de bloco eh onde nasceu o
+REM     "set foi inesperado neste momento".
+REM
+REM  2. NAO da' para capturar a saida com for /f direto:
+REM        for /f "usebackq ..." %%P in (`!WSLRUN! ... sh "..."`) do ...
+REM     O comando entre backquotes contem aspas, e o parser do cmd.exe se
+REM     perde nelas -- ele tratou a linha inteira como texto e tentou
+REM     executar 'wsl.exe" -e sh "', que nao existe. Passos 1 a 3 funcionam
+REM     porque sao linha de comando normal; so' o que esta' dentro de um
+REM     for /f quebra.
+REM
+REM  O padrao seguro: manda a saida para um arquivo, e le o arquivo. Com
+REM  usebackq, aspas duplas significam "nome de arquivo", entao nao ha'
+REM  comando a interpretar -- e linhas em branco sao puladas sozinhas, o que
+REM  tambem resolve o caso de nao achar nada.
+set "FOUND="
+!WSLRUN! !WSLEX! sh "!WSLPATH!/tools/find_ps2dev.sh" > "%TEMP%\fnf-ps2dev.txt" 2>nul
+if exist "%TEMP%\fnf-ps2dev.txt" (
+    for /f "usebackq tokens=*" %%P in ("%TEMP%\fnf-ps2dev.txt") do set "FOUND=%%P"
+    del "%TEMP%\fnf-ps2dev.txt" >nul 2>&1
+)
 
 if defined FOUND (
     echo       OK, achei em !FOUND!
@@ -255,8 +273,14 @@ REM ------------------------------------------------- 6. copiar pro pendrive
 
 echo [6/7] Procurando o pendrive...
 set "PEN="
-for /f "usebackq tokens=*" %%D in (`powershell -NoProfile -Command "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=2' ^| Select-Object -ExpandProperty DeviceID" 2^>nul`) do (
-    if not defined PEN set "PEN=%%D"
+REM Mesma historia do ps2dev: PowerShell com aspas dentro de um for /f
+REM backquotado quebra do mesmo jeito. Saida para arquivo, depois le.
+powershell -NoProfile -Command "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=2' ^| Select-Object -ExpandProperty DeviceID" > "%TEMP%\fnf-pen.txt" 2>nul
+if exist "%TEMP%\fnf-pen.txt" (
+    for /f "usebackq tokens=*" %%D in ("%TEMP%\fnf-pen.txt") do (
+        if not defined PEN set "PEN=%%D"
+    )
+    del "%TEMP%\fnf-pen.txt" >nul 2>&1
 )
 
 if not defined PEN (
