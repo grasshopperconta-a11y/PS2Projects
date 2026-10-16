@@ -21,15 +21,22 @@ cd "$REPO" || exit 1
 FRAMES=${1:-${PS2H_FRAMES:-1400}}
 ROOT=${2:-${PS2H_ROOT:-build/harness_assets}}
 ASSET_ROOT=${ASSET_ROOT:-build/harness_assets}
-# Roteiro que atravessa o jogo INTEIRO. Sem isto o harness roda milhares de
-# quadros parado na tela de titulo, e o menu, o story e o tutorial -- que eh
-# onde esta o codigo arriscado -- nunca sao exercitados.
-#   200  CROSS  titulo -> confirma -> menu principal
-#   420  CROSS  menu (STORY MODE, selecao 0) -> story menu
-#   600  CROSS  story menu -> tutorial
-# Os numeros nao sao chute: veio do proprio log do jogo, que registra o quadro
-# exato de cada troca de estado (state=<ui_state> no quadro N).
-INPUT=${PS2H_INPUT:-"200:CROSS,420:CROSS,600:CROSS"}
+# Roteiro que atravessa o jogo INTEIRO e cicla o tutorial varias vezes.
+# Sem isto o harness roda milhares de quadros parado na tela de titulo, e o
+# menu, o story e o tutorial -- que eh onde esta o codigo arriscado -- nunca
+# sao exercitados.
+#   200  CROSS   titulo -> menu principal              (state=6  quadro 365)
+#   420  CROSS   menu (STORY MODE, selecao 0) -> story (state=7  quadro 516)
+#   600  CROSS   story -> tutorial                     (state=8  quadro 615)
+#   700  CIRCLE  tutorial -> story   } cada par CIRCLE/CROSS
+#   760  CROSS   story -> tutorial   } reentra no tutorial, que eh
+#   860  CIRCLE  ...                 } o caminho de free/reload dos
+#   920  CROSS   ...                 } pacotes CFZ4 -- justamente onde
+#   ... 5 ciclos no total            } o codigo comenta ser arriscado
+# Os numeros nao sao chute: vieram do proprio log do jogo, que registra o quadro
+# exato de cada troca de estado (state=<ui_state> no quadro N). Uma passada so
+# pelo tutorial gastaria 740 dos 1401 quadros parados depois do fim da musica.
+INPUT=${PS2H_INPUT:-"200:CROSS,420:CROSS,600:CROSS,700:CIRCLE,760:CROSS,860:CIRCLE,920:CROSS,1020:CIRCLE,1080:CROSS,1180:CIRCLE,1240:CROSS,1340:CIRCLE"}
 
 SDK=${PS2SDK_HEADERS:-/tmp/fnf-ps2sdk-headers}
 if [ ! -f "$SDK/common/include/tamtypes.h" ]; then

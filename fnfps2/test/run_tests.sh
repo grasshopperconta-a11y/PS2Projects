@@ -178,7 +178,7 @@ else
 
     # --- positivo: 1400 quadros, nenhum estouro permitido ------------------
     out=$(PS2H_FRAMES=1400 PS2H_ROOT="$ROOT" PS2H_WATCHDOG=180 \
-              PS2H_INPUT="200:CROSS,420:CROSS,600:CROSS" \
+              PS2H_INPUT="200:CROSS,420:CROSS,600:CROSS,700:CIRCLE,760:CROSS,860:CIRCLE,920:CROSS,1020:CIRCLE,1080:CROSS,1180:CIRCLE,1240:CROSS,1340:CIRCLE" \
               timeout 240 "$HARNESS_BIN" 2>&1) || {
         echo "  FAIL: o harness terminou com codigo de erro em 1400 quadros"
         echo "$out" | tail -30
@@ -210,7 +210,15 @@ else
         echo "  FAIL: o chart do tutorial nao carregou"
         exit 1
     fi
-    echo "  cobertura: chart do tutorial carregado, eventos de chart disparados"
+    # Reentrar no tutorial eh o caminho de free/reload dos pacotes CFZ4, que o
+    # proprio codigo comenta ser arriscado. Uma passada so nao exercita isso.
+    ncycles=$(grep -c "state,8," "$LOG" 2>/dev/null || echo 0)
+    if [ "$ncycles" -lt 3 ]; then
+        echo "  FAIL: o tutorial so foi entrado $ncycles vez(es); o ciclo de"
+        echo "        free/reload dos pacotes nao foi exercitado"
+        exit 1
+    fi
+    echo "  cobertura: chart carregado, tutorial entrado $ncycles vezes"
     echo "  positivo: OK, 1400 quadros, jogo inteiro, nenhum estouro"
 
     # --- negativo 1: pacote de 8 quadwords, o estouro TEM de ser pego -----
@@ -250,6 +258,42 @@ else
         exit 1
     fi
     echo "  negativo 2 (DMA com 70000 qw): OK, detectou o excesso sobre QWC_MAX"
+fi
+
+echo
+echo "== harness com ASan + UBSan (todos os buffers, nao so o pacote) =="
+
+# O pacote limitado pega estouro DO PACOTE de desenho. Estes sanitizadores
+# pegam estouro, uso apos free e vazamento em TODOS os outros buffers do jogo
+# -- a mesma classe de bug, so que em outro lugar. Se o harness comum passa e
+# este nao, ha um erro de memoria que o pacote limitado nao ve.
+if [ ! -x build/fnf_harness_asan ]; then
+    sh tools/run_harness_asan.sh 5 >/dev/null 2>&1 || true
+fi
+if [ ! -x build/fnf_harness_asan ]; then
+    echo "  SKIP: nao consegui construir o harness com sanitizers."
+else
+    set +e
+    PS2H_FRAMES=1400 PS2H_ROOT="$ROOT" \
+        PS2H_INPUT="200:CROSS,420:CROSS,600:CROSS,700:CIRCLE,760:CROSS,860:CIRCLE,920:CROSS,1020:CIRCLE,1080:CROSS,1180:CIRCLE,1240:CROSS,1340:CIRCLE" PS2H_WATCHDOG=600 \
+        ASAN_OPTIONS=detect_leaks=1:abort_on_error=0:print_stacktrace=1 \
+        UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0 \
+        timeout 900 build/fnf_harness_asan > build/harness_asan.log 2>&1
+    rc=$?
+    set -e
+    if [ $rc -ne 0 ]; then
+        echo "  FAIL: o harness com sanitizers terminou com codigo $rc"
+        grep -E "ERROR|runtime error|SUMMARY|LeakSanitizer" build/harness_asan.log | head -25
+        exit 1
+    fi
+    if grep -qE "ERROR: (Address|Leak)Sanitizer|runtime error:" build/harness_asan.log; then
+        echo "  FAIL: os sanitizers acharam erro de memoria ou comportamento indefinido"
+        grep -E "ERROR|runtime error|SUMMARY" build/harness_asan.log | head -25
+        exit 1
+    fi
+    grep -E "^(quadros executados|maior pacote|chamadas de desenho)" build/harness_asan.log | sed 's/^/    /'
+    echo "  OK: 1401 quadros, jogo inteiro, zero erro de memoria," \
+          "zero comportamento indefinido, zero vazamento"
 fi
 
 echo

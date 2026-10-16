@@ -842,8 +842,9 @@ void ps2h_note_draw(void) { h_draw_calls++; }
 extern void *__real_draw_rect_filled(void *q, int context, void *v);
 extern void *__real_draw_rect_textured(void *q, int context, void *v);
 extern void *__real_draw_setup_environment(int context, void *fb, void *zb);
-extern int   __real_draw_texture_transfer(int context, void *data, int width,
-                                          int height, int psm, int tcc, int tfx);
+extern qword_t *__real_draw_texture_transfer(qword_t *q, void *src, int width,
+                                             int height, int psm, int dest,
+                                             int dest_width);
 
 void *__wrap_draw_rect_filled(void *q, int context, void *v)
 { h_draw_filled++; return __real_draw_rect_filled(q, context, v); }
@@ -854,10 +855,15 @@ void *__wrap_draw_rect_textured(void *q, int context, void *v)
 void *__wrap_draw_setup_environment(int context, void *fb, void *zb)
 { h_draw_env++; return __real_draw_setup_environment(context, fb, zb); }
 
-int __wrap_draw_texture_transfer(int context, void *data, int width, int height,
-                                 int psm, int tcc, int tfx)
+/* A assinatura TEM de ser a do draw.h real, parametro por parametro. Declarar
+   o primeiro como int em vez de qword_t* parece inofensivo, mas no x86-64
+   escrever num registrador de 32 bits ZERA os 32 bits altos: com o heap do ASan
+   acima de 4 GB o ponteiro chega truncado e o draw.c morre com SEGV. Foi assim
+   que se descobriu -- e so com o ASan ligado. */
+qword_t *__wrap_draw_texture_transfer(qword_t *q, void *src, int width, int height,
+                                      int psm, int dest, int dest_width)
 {
     h_upload_calls++;
     h_upload_bytes += (unsigned)(width * height * 4);
-    return __real_draw_texture_transfer(context, data, width, height, psm, tcc, tfx);
+    return __real_draw_texture_transfer(q, src, width, height, psm, dest, dest_width);
 }

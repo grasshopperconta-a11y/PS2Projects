@@ -28,7 +28,8 @@ reimplementação — e executa no PC com:
 | **Registradores do GS** | `0x12000000` mapeado de verdade com `MAP_FIXED`, `CSR` com o bit FINISH ligado — o `draw.c` do ps2sdk roda sem uma linha alterada |
 | **`mass:/` → host** | `mass:/FNFPS2/assets/x` vira `<raiz>/FNFPS2/assets/x`, por interposição em nível de objeto |
 | **Threads reais** | `CreateThread`/`StartThread` disparam pthreads de verdade, então a thread de pré-carga do título roda |
-| **Pad roteirizado** | `PS2H_INPUT` aperta botões em quadros escolhidos, para o jogo atravessar título → menu → story → tutorial |
+| **Pad roteirizado** | `PS2H_INPUT` aperta botões em quadros escolhidos, para o jogo atravessar título → menu → story → tutorial, e ciclar o tutorial |
+| **ASan + UBSan** | variante `run_harness_asan.sh` que instrumenta o binário: pega estouro, uso após free e vazamento em **todos** os buffers do jogo, não só no pacote |
 | **Watchdog** | Se travar, imprime **onde** parou em vez de ficar pendurado sem dizer nada |
 | **Shutdown distinto** | O jogo termina chamando `SleepThread()` e nunca volta do `main`. O harness reconhece isso como sucesso; em qualquer outro momento é falha |
 
@@ -53,7 +54,8 @@ intatos.
 ## Como usar
 
 ```sh
-sh tools/run_harness.sh 1400             # padrao: atravessa o jogo inteiro
+sh tools/run_harness.sh 1400             # padrao: jogo inteiro, 5 ciclos
+sh tools/run_harness_asan.sh 1400        # o mesmo, com ASan + UBSan
 sh tools/run_harness.sh 60 build/harness_assets
 PS2H_INPUT="200:CROSS,600:CROSS" ./build/fnf_harness
 ```
@@ -71,14 +73,43 @@ O roteiro padrão resolve isso. Os quadros não são chute: vieram do próprio l
 do jogo, que registra o quadro exato de cada troca de estado.
 
 ```
-200  CROSS   titulo -> menu principal          (state=6  no quadro 365)
-420  CROSS   menu (STORY MODE) -> story menu   (state=7  no quadro 516)
-600  CROSS   story menu -> tutorial            (state=8  no quadro 615)
+200  CROSS   titulo -> menu principal              (state=6  no quadro 365)
+420  CROSS   menu (STORY MODE) -> story menu       (state=7  no quadro 516)
+600  CROSS   story menu -> tutorial                (state=8  no quadro 615)
+700  CIRCLE  tutorial -> story   } cada par CIRCLE/CROSS
+760  CROSS   story -> tutorial   } reentra no tutorial, que eh
+860  CIRCLE  ...                 } o caminho de free/reload dos
+920  CROSS   ...                 } pacotes CFZ4 -- justamente onde
+...  5 ciclos no total            } o codigo comenta ser arriscado
 ```
 
-E a suíte **exige** que esses três estados apareçam no log, mais o chart do
-tutorial carregado. Se o jogo parar antes, o teste falha — não passa em
-silêncio.
+O ciclo não é enfeite. Numa passada só, a música do tutorial acaba no quadro
+658 e **740 dos 1401 quadros seguintes ficam parados**. Reentrando 5 vezes:
+
+```
+quadros no tutorial ......... 30 -> 150
+arquivos abertos ............ 69 -> 162
+pacotes criados ............. 2374 -> 4013
+```
+
+E a suíte **exige** que os três estados apareçam no log, que o chart do tutorial
+carregue, e que o tutorial seja entrado pelo menos 3 vezes. Se o jogo parar
+antes, o teste falha — não passa em silêncio.
+
+## ASan + UBSan: todos os buffers, não só o pacote
+
+O pacote limitado pega estouro **do pacote de desenho**. `tools/run_harness_asan.sh`
+compila o mesmo jogo com `-fsanitize=address,undefined` e pega estouro, uso após
+free e vazamento em **todos** os outros buffers — a mesma classe de bug, só que
+em outro lugar. Se o harness comum passa e este não, há um erro de memória que o
+pacote limitado não vê.
+
+Ele já pagou o próprio custo: achou um SEGV que só aparece com o ASan ligado.
+Meu `__wrap_draw_texture_transfer` declarava o primeiro parâmetro como `int` em
+vez de `qword_t *`. Parece inofensivo, mas no x86-64 **escrever num registrador
+de 32 bits zera os 32 bits altos**: com o heap do ASan acima de 4 GB, o ponteiro
+chegava truncado e o `draw.c` morria. Sem o ASan o heap ficava abaixo de 4 GB e
+o truncamento não perdia nada — o bug existia, só não aparecia.
 
 ## Os dois testes negativos
 
@@ -134,14 +165,17 @@ maior pacote construido ....... 616 quadwords (limite pedido 4096)
 ESTOUROS DE PACOTE ............ 0
 escritas na zona de guarda .... 0
 envios DMA acima de QWC_MAX ... 0
-uploads de textura ........... 1376 chamadas, 253 MB
-setup_environment ............ 1759
-chamadas de desenho .......... 108268  (preenchidos 2136, texturizados 106132)
-E/S: opens/falhas/leituras ... 69 / 0 / 7073 (leituras curtas 0)
+uploads de textura ........... 2088 chamadas, 288 MB
+setup_environment ............ 2212
+chamadas de desenho .......... 86398  (preenchidos 2692, texturizados 83706)
+E/S: opens/falhas/leituras ... 162 / 0 / 5139 (leituras curtas 0)
 RESULTADO: PASSOU
 ```
 
-O maior pacote real ficou em **616 dos 4096** disponíveis. A tela de título
-usa 299; o tutorial, com 106 mil chamadas de desenho em 1401 quadros, é o que
+E com ASan + UBSan, o mesmo percurso: **zero erro de memória, zero
+comportamento indefinido, zero vazamento**.
+
+O maior pacote real ficou em **616 dos 4096** disponíveis. A tela de título usa
+299; o tutorial, com 106 mil chamadas de desenho em 1401 quadros, é o que
 realmente estica o pacote — e é justamente o estado que a primeira versão do
 harness nunca alcançava.
