@@ -18,9 +18,18 @@ set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO" || exit 1
 
-FRAMES=${1:-${PS2H_FRAMES:-240}}
+FRAMES=${1:-${PS2H_FRAMES:-1400}}
 ROOT=${2:-${PS2H_ROOT:-build/harness_assets}}
 ASSET_ROOT=${ASSET_ROOT:-build/harness_assets}
+# Roteiro que atravessa o jogo INTEIRO. Sem isto o harness roda milhares de
+# quadros parado na tela de titulo, e o menu, o story e o tutorial -- que eh
+# onde esta o codigo arriscado -- nunca sao exercitados.
+#   200  CROSS  titulo -> confirma -> menu principal
+#   420  CROSS  menu (STORY MODE, selecao 0) -> story menu
+#   600  CROSS  story menu -> tutorial
+# Os numeros nao sao chute: veio do proprio log do jogo, que registra o quadro
+# exato de cada troca de estado (state=<ui_state> no quadro N).
+INPUT=${PS2H_INPUT:-"200:CROSS,420:CROSS,600:CROSS"}
 
 SDK=${PS2SDK_HEADERS:-/tmp/fnf-ps2sdk-headers}
 if [ ! -f "$SDK/common/include/tamtypes.h" ]; then
@@ -96,13 +105,20 @@ echo "  compilou: $(wc -c < build/fnf_harness) bytes, $nwarn avisos"
 
 echo
 echo "== gerando a raiz de assets (o jogo le tudo de mass:/FNFPS2/assets) =="
-python3 tools/gen_harness_assets.py "$ASSET_ROOT" || exit 1
+# Os charts do tutorial sao os DE VERDADE, convertidos pelo conversor do
+# repositorcio (test/run_tests.sh gera build/charts). Se nao existirem, o
+# harness avisa -- navegar ate o tutorial sem chart nao exercita o loader.
+if [ ! -f build/charts/tutorial-easy.chart ]; then
+    echo "  (gerando os charts convertidos...)"
+    sh test/run_tests.sh >/dev/null 2>&1 || true
+fi
+python3 tools/gen_harness_assets.py "$ASSET_ROOT" build/charts || exit 1
 
 echo
 echo "== executando $FRAMES quadros com raiz de assets '$ROOT' =="
 # Watchdog sempre ligado: uma ferramenta de verificacao que fica pendurada sem
 # dizer onde eh pior do que uma que falha. PS2H_WATCHDOG esta em segundos.
-PS2H_FRAMES="$FRAMES" PS2H_ROOT="$ROOT" PS2H_WATCHDOG="${PS2H_WATCHDOG:-180}" PS2H_STRICT="${PS2H_STRICT:-1}" \
+PS2H_FRAMES="$FRAMES" PS2H_ROOT="$ROOT" PS2H_INPUT="$INPUT" PS2H_WATCHDOG="${PS2H_WATCHDOG:-180}" PS2H_STRICT="${PS2H_STRICT:-1}" \
     timeout -s KILL $(( ${PS2H_WATCHDOG:-120} + 30 )) ./build/fnf_harness
 rc=$?
 if [ $rc -eq 137 ] || [ $rc -eq 9 ]; then

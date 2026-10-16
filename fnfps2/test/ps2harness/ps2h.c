@@ -81,6 +81,14 @@ static u32 h_io_opens, h_io_fail_opens, h_io_reads, h_io_short_reads;
 static u32 h_audio_submitted, h_audio_available_calls;
 static u32 h_upload_calls, h_upload_bytes;
 static u32 h_draw_filled, h_draw_textured, h_draw_env;
+typedef struct { unsigned frame; unsigned short btns; } ps2h_input_t;
+
+#define PS2H_MAX_INPUT 64
+static ps2h_input_t ps2h_input[PS2H_MAX_INPUT];
+static unsigned ps2h_input_n;
+static unsigned h_input_fired;
+
+
 static u32 h_draw_calls;
 static int  h_quit_requested;
 unsigned ps2h_quit_frame = 0;
@@ -101,6 +109,7 @@ static void ps2h_report(void)
         "setup_environment ............ %u\n"
         "chamadas de desenho .......... %u  (preenchidos %u, texturizados %u)\n"
         "E/S: opens/falhas/leituras ... %u / %u / %u (leituras curtas %u)\n"
+        "botoes do roteiro executados . %u de %u\n"
         "audio: amostras submetidas ... %u\n"
         "======================================================\n",
         h_frames_run, h_packets_made, h_packets_freed,
@@ -110,7 +119,7 @@ static void ps2h_report(void)
         h_upload_calls, h_upload_bytes,
         h_draw_env, (unsigned)(h_draw_filled + h_draw_textured), h_draw_filled, h_draw_textured,
         h_io_opens, h_io_fail_opens, h_io_reads, h_io_short_reads,
-        h_audio_submitted);
+        h_input_fired, ps2h_input_n, h_audio_submitted);
 
     if (h_overflows || h_guard_hits || h_oversize_sends) {
         fprintf(stderr,
@@ -430,6 +439,7 @@ int padGetState(int port, int slot) { (void)port;(void)slot; return 6; /* PAD_ST
 unsigned char padRead(int port, int slot, struct padButtonStatus *data)
 {
     struct padButtonStatus *b = data;
+    unsigned script;
     if (!b) return 0;
     memset(b, 0, sizeof *b);
     b->ok = 1;
@@ -438,6 +448,16 @@ unsigned char padRead(int port, int slot, struct padButtonStatus *data)
     b->btns &= (unsigned short)~PAD_SELECT;
     b->rjoy_h = b->rjoy_v = 128;
     b->ljoy_h = b->ljoy_v = 128;
+
+    /* Roteiro de botoes. Sem isso o harness roda 240 quadros parado na tela
+       de titulo: o menu, o story e o tutorial -- que eh onde esta o codigo
+       arriscado -- nunca sao exercitados. */
+    for (script = 0; script < ps2h_input_n; script++) {
+        if (ps2h_input[script].frame != h_frames_run) continue;
+        b->btns &= (unsigned short)~ps2h_input[script].btns;
+        h_input_fired++;
+    }
+
     if (h_quit_requested) {
         b->btns &= (unsigned short)~PAD_START;
         h_quit_requested = 0;    /* so por um quadro */
@@ -556,6 +576,54 @@ off_t lseek(int fd, off_t off, int whence)
 
 /* No harness tudo roda numa thread so. As funcoes existem para o jogo linkar
    e para o comportamento ser o obvio: criar da certo, esperar nao bloqueia. */
+
+/* ------------------------------------------------------------------------- */
+/*  roteiro de botoes (PS2H_INPUT)                                           */
+/* ------------------------------------------------------------------------- */
+
+static unsigned ps2h_button_bit(const char *name)
+{
+    struct { const char *n; unsigned short b; } t[] = {
+        {"SELECT", PAD_SELECT}, {"START", PAD_START}, {"UP", PAD_UP},
+        {"RIGHT", PAD_RIGHT},   {"DOWN", PAD_DOWN},   {"LEFT", PAD_LEFT},
+        {"L2", PAD_L2}, {"R2", PAD_R2}, {"L1", PAD_L1}, {"R1", PAD_R1},
+        {"TRIANGLE", PAD_TRIANGLE}, {"CIRCLE", PAD_CIRCLE},
+        {"CROSS", PAD_CROSS},     {"SQUARE", PAD_SQUARE},
+    };
+    unsigned i;
+    for (i = 0; i < sizeof t / sizeof t[0]; i++)
+        if (strcmp(name, t[i].n) == 0) return t[i].b;
+    return 0;
+}
+
+/* Formato: "quadro:BOTAO,quadro:BOTAO+BOTAO"  (ex.: "150:CROSS,320:CIRCLE") */
+static void ps2h_parse_input(const char *spec)
+{
+    char buf[512], *save = NULL, *tok;
+    if (!spec || !*spec) return;
+    strncpy(buf, spec, sizeof buf - 1);
+    buf[sizeof buf - 1] = 0;
+    for (tok = strtok_r(buf, ",", &save); tok && ps2h_input_n < PS2H_MAX_INPUT;
+         tok = strtok_r(NULL, ",", &save)) {
+        char *colon = strchr(tok, ':');
+        char *names, *nsave = NULL, *nm;
+        unsigned short bits = 0;
+        if (!colon) continue;
+        *colon = 0;
+        names = colon + 1;
+        for (nm = strtok_r(names, "+", &nsave); nm; nm = strtok_r(NULL, "+", &nsave)) {
+            unsigned bit = ps2h_button_bit(nm);
+            if (!bit) {
+                fprintf(stderr, "harness: botao desconhecido no roteiro: '%s'\n", nm);
+                continue;
+            }
+            bits = (unsigned short)(bits | bit);
+        }
+        ps2h_input[ps2h_input_n].frame = (unsigned)strtoul(tok, NULL, 10);
+        ps2h_input[ps2h_input_n].btns  = bits;
+        ps2h_input_n++;
+    }
+}
 
 /* ------------------------------------------------------------------------- */
 /*  threads: pthread de verdade                                              */
@@ -703,6 +771,7 @@ static void ps2h_read_env(void)
     if ((e = getenv("PS2H_STRICT"))) ps2h_strict = atoi(e);
     if ((e = getenv("PS2H_QWORDS_CAP"))) ps2h_qwcap = (unsigned)strtoul(e, NULL, 10);
     if ((e = getenv("PS2H_FORCE_QWC")))  ps2h_force_qwc = (unsigned)strtoul(e, NULL, 10);
+    ps2h_parse_input(getenv("PS2H_INPUT"));
     if (ps2h_frames == 0) ps2h_frames = 1;
 }
 
@@ -749,6 +818,13 @@ static void ps2h_boot(void)
     if (ps2h_force_qwc)
         fprintf(stderr, "harness: ATENCAO, todo envio DMA vai com %u quadwords "
                         "(teste negativo do limite QWC_MAX)\n", ps2h_force_qwc);
+    if (ps2h_input_n) {
+        unsigned i;
+        fprintf(stderr, "harness: roteiro de botoes (%u eventos):", ps2h_input_n);
+        for (i = 0; i < ps2h_input_n; i++)
+            fprintf(stderr, " %u:%04x", ps2h_input[i].frame, ps2h_input[i].btns);
+        fprintf(stderr, "\n");
+    }
 }
 
 /* Contadores que o jogo expoe, para o relatorio do harness. */

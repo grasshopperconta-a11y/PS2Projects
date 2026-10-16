@@ -154,6 +154,16 @@ echo
 echo
 echo "== harness de link + execucao (jogo real + draw real do ps2sdk) =="
 
+# Os assets sinteticos tem de ser validos ANTES de o jogo tentar le-los: um
+# asset malformado faria o jogo parar no inicio e o harness passaria sem
+# exercitar nada. Este verificador replica cada decodificador do jogo em
+# Python e exige que o arquivo consuma exatamente o tamanho previsto e produza
+# exatamente o tamanho decodificado.
+python3 tools/check_harness_assets.py || {
+    echo "  FAIL: os assets sinteticos do harness nao decodificam como o jogo espera"
+    exit 1
+}
+
 HARNESS_BIN=build/fnf_harness
 if [ ! -x "$HARNESS_BIN" ]; then
     echo "  (construindo o harness...)"
@@ -164,28 +174,50 @@ if [ ! -x "$HARNESS_BIN" ]; then
     echo "        Rode 'sh tools/run_harness.sh' para ve-lo em acao."
 else
     ROOT=build/harness_assets
+    LOG="$ROOT/FNFPS2/FNF_COLHEITA.txt"
 
-    # --- positivo: 240 quadros, nenhum estouro permitido -------------------
-    out=$(PS2H_FRAMES=240 PS2H_ROOT="$ROOT" PS2H_WATCHDOG=180 \
+    # --- positivo: 1400 quadros, nenhum estouro permitido ------------------
+    out=$(PS2H_FRAMES=1400 PS2H_ROOT="$ROOT" PS2H_WATCHDOG=180 \
+              PS2H_INPUT="200:CROSS,420:CROSS,600:CROSS" \
               timeout 240 "$HARNESS_BIN" 2>&1) || {
-        echo "  FAIL: o harness terminou com codigo de erro em 240 quadros"
+        echo "  FAIL: o harness terminou com codigo de erro em 1400 quadros"
         echo "$out" | tail -30
         exit 1
     }
     echo "$out" | grep -E "^(quadros executados|maior pacote|ESTOUROS|escritas na zona|envios DMA acima|uploads de textura|setup_environment|chamadas de desenho|RESULTADO)" | sed 's/^/    /'
-    if echo "$out" | grep -q "RESULTADO: PASSOU"; then
-        echo "  positivo: OK, 240 quadros sem nenhum estouro"
-    else
-        echo "  FAIL: o harness nao passou em 240 quadros"
+    if ! echo "$out" | grep -q "RESULTADO: PASSOU"; then
+        echo "  FAIL: o harness nao passou em 1400 quadros"
         echo "$out" | tail -30
         exit 1
     fi
+
+    # --- cobertura: o jogo TEM de ter chegado ao tutorial -------------------
+    # Um teste que passa sem exercitar o codigo arriscado eh um verde falso.
+    # O log do proprio jogo registra o quadro de cada troca de estado, entao
+    # eh ele que prova a cobertura -- nao uma suposicao.
+    reached=""
+    for st in 6 7 8; do
+        if grep -q "state,$st," "$LOG" 2>/dev/null; then
+            reached="$reached $st"
+        else
+            echo "  FAIL: o jogo nunca entrou no estado $st"
+            echo "        (o harness passou, mas sem exercitar menu/story/tutorial)"
+            exit 1
+        fi
+    done
+    echo "  cobertura: estados alcancados ->$reached"
+    if ! grep -q "tutorial_chart,0," "$LOG" 2>/dev/null; then
+        echo "  FAIL: o chart do tutorial nao carregou"
+        exit 1
+    fi
+    echo "  cobertura: chart do tutorial carregado, eventos de chart disparados"
+    echo "  positivo: OK, 1400 quadros, jogo inteiro, nenhum estouro"
 
     # --- negativo 1: pacote de 8 quadwords, o estouro TEM de ser pego -----
     # O harness morre com abort() de proposito, e abort() faz o set -e do
     # script cair fora. Entao a secao de testes negativos roda com set +e.
     set +e
-    PS2H_FRAMES=240 PS2H_ROOT="$ROOT" PS2H_QWORDS_CAP=8 PS2H_WATCHDOG=60 \
+    PS2H_FRAMES=1400 PS2H_ROOT="$ROOT" PS2H_QWORDS_CAP=8 PS2H_WATCHDOG=60 \
         timeout 120 "$HARNESS_BIN" > build/harness_neg1.log 2>&1
     rc=$?
     set -e
@@ -203,7 +235,7 @@ else
 
     # --- negativo 2: DMA acima de QWC_MAX, tambem TEM de ser pego --------
     set +e
-    PS2H_FRAMES=240 PS2H_ROOT="$ROOT" PS2H_FORCE_QWC=70000 PS2H_WATCHDOG=60 \
+    PS2H_FRAMES=1400 PS2H_ROOT="$ROOT" PS2H_FORCE_QWC=70000 PS2H_WATCHDOG=60 \
         timeout 120 "$HARNESS_BIN" > build/harness_neg2.log 2>&1
     rc=$?
     set -e
