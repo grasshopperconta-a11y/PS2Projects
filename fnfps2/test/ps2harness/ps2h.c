@@ -113,6 +113,8 @@ static int  h_quit_requested;
 unsigned ps2h_quit_frame = 0;
 static unsigned ps2h_watch_secs = 0;
 
+static void ps2h_band_report(void);
+
 static void ps2h_report(void)
 {
     fprintf(stderr,
@@ -139,6 +141,8 @@ static void ps2h_report(void)
         h_draw_env, (unsigned)(h_draw_filled + h_draw_textured), h_draw_filled, h_draw_textured,
         h_io_opens, h_io_fail_opens, h_io_reads, h_io_short_reads,
         h_input_fired, ps2h_input_n, h_audio_submitted);
+
+    ps2h_band_report();
 
     if (h_overflows || h_guard_hits || h_oversize_sends) {
         fprintf(stderr,
@@ -875,8 +879,117 @@ extern qword_t *__real_draw_texture_transfer(qword_t *q, void *src, int width,
 void *__wrap_draw_rect_filled(void *q, int context, void *v)
 { h_draw_filled++; return __real_draw_rect_filled(q, context, v); }
 
+/* --- auditoria da faixa visivel -------------------------------------------
+   O jogo publica em g_band_on/g_band_topo/g_band_base a faixa de linhas que
+   deveria ser a unica visivel naquele momento (a mesma que o scissor do GS
+   recebe). Aqui cada retangulo TEXTURADO eh comparado contra ela. Se algo
+   sair, o numero de linhas fora da faixa sai no relatorio -- que eh
+   exatamente o defeito que o teste no console mostrou: o fundo do menu
+   aparecendo das linhas 46 a 447 e um item inteiro em 404..462 com o scissor
+   em 56..391. Um rasterizador de brinquedo nao pega isso; uma conta pega. */
+extern int g_band_on, g_band_topo, g_band_base;
+extern int g_ui_state_dbg;
+
+static unsigned long h_band_out;       /* retangulos com alguma linha fora */
+static unsigned long h_band_lines;     /* total de linhas fora da faixa    */
+static unsigned long h_band_worst;     /* pior caso, em linhas             */
+static int h_band_frame = -1;          /* quadro do pior caso              */
+static float h_band_y0, h_band_y1;     /* o retangulo do pior caso         */
+
+/* Por faixa: um numero agregado esconde ONDE esta o problema. Com a quebra
+   da para dizer "o menu principal esta limpo e o story nao" -- o contrario
+   de um total unico e sem contexto. */
+#define PS2H_BANDS 8
+#define PS2H_STATES 10
+static int h_band_topo_v[PS2H_BANDS], h_band_base_v[PS2H_BANDS];
+static unsigned long h_band_out_v[PS2H_BANDS], h_band_lines_v[PS2H_BANDS];
+static int h_band_n;
+static unsigned long h_band_out_st[PS2H_STATES], h_band_lines_st[PS2H_STATES];
+static unsigned long h_band_rect_st[PS2H_STATES];
+static unsigned long h_band_worst_st[PS2H_STATES];
+static int h_band_frame_st[PS2H_STATES];
+static float h_band_y0_st[PS2H_STATES], h_band_y1_st[PS2H_STATES];
+static int h_band_topo_st[PS2H_STATES], h_band_base_st[PS2H_STATES];
+
 void *__wrap_draw_rect_textured(void *q, int context, void *v)
-{ h_draw_textured++; return __real_draw_rect_textured(q, context, v); }
+{
+    h_draw_textured++;
+    if (g_band_on) {
+        /* texrect_t REAL do ps2sdk (ee/draw/include/draw2d.h):
+         *   { vertex_t v0; texel_t t0; vertex_t v1; texel_t t1; color_t color; }
+         * com vertex_t = {float x; float y; unsigned int z;} (12 bytes) e
+         * texel_t/color_t packed+aligned(8) (8 bytes). Em floats isso da
+         * v0.x=0 v0.y=1 v0.z=2 | t0.s=4 t0.t=5 | v1.x=6 v1.y=7 v1.z=8 |
+         * t1.s=10 t1.t=11 | color=12. Ler v1.y no offset 3 pega t0.s, que eh
+         * a coordenada U da textura -- a conta "passa" mas nao mede nada. */
+        const float *y = (const float *)v;
+        float y0 = y[1], y1 = y[7];
+        float lo = y0 < y1 ? y0 : y1, hi = y0 < y1 ? y1 : y0;
+        float topo = (float)g_band_topo, base = (float)g_band_base;
+        float out = 0.0f;
+        if (lo < topo) out += topo - lo;
+        if (hi > base) out += hi - base;
+        if (out > 0.0f) {
+            int slot = -1, k;
+            for (k = 0; k < h_band_n; k++) {
+                if (h_band_topo_v[k] == g_band_topo && h_band_base_v[k] == g_band_base) { slot = k; break; }
+            }
+            if (slot < 0 && h_band_n < PS2H_BANDS) {
+                slot = h_band_n++;
+                h_band_topo_v[slot] = g_band_topo;
+                h_band_base_v[slot] = g_band_base;
+            }
+            if (slot >= 0) { h_band_out_v[slot]++; h_band_lines_v[slot] += (unsigned long)out; }
+            if (g_ui_state_dbg >= 0 && g_ui_state_dbg < PS2H_STATES) {
+                int st = g_ui_state_dbg;
+                h_band_out_st[st]++;
+                h_band_lines_st[st] += (unsigned long)out;
+                h_band_rect_st[st]++;
+                if (out > (float)h_band_worst_st[st]) {
+                    h_band_worst_st[st] = (unsigned long)out;
+                    h_band_frame_st[st] = (int)h_frames_run;
+                    h_band_y0_st[st] = lo; h_band_y1_st[st] = hi;
+                    h_band_topo_st[st] = g_band_topo;
+                    h_band_base_st[st] = g_band_base;
+                }
+            }
+            h_band_out++;
+            h_band_lines += (unsigned long)out;
+            if (out > (float)h_band_worst) {
+                h_band_worst = (unsigned long)out;
+                h_band_frame = (int)h_frames_run;
+                h_band_y0 = lo; h_band_y1 = hi;
+            }
+        }
+    }
+    return __real_draw_rect_textured(q, context, v);
+}
+
+void ps2h_band_report(void)
+{
+    int i;
+    fprintf(stderr, "    auditoria da faixa visivel: %lu retangulo(s) com linha fora,"
+                    " %lu linha(s) fora no total\n", h_band_out, h_band_lines);
+    for (i = 0; i < h_band_n; i++) {
+        fprintf(stderr, "      faixa %3d..%3d: %8lu retangulo(s), %10lu linha(s) fora\n",
+                h_band_topo_v[i], h_band_base_v[i], h_band_out_v[i], h_band_lines_v[i]);
+    }
+    for (i = 0; i < PS2H_STATES; i++) {
+        if (h_band_rect_st[i]) {
+            fprintf(stderr, "      ui_state %d: %8lu retangulo(s), %10lu linha(s) fora"
+                            " | pior: quadro %d, y %.1f..%.1f, %lu fora de %d..%d\n",
+                    i, h_band_rect_st[i], h_band_lines_st[i],
+                    h_band_frame_st[i], h_band_y0_st[i], h_band_y1_st[i],
+                    h_band_worst_st[i], h_band_topo_st[i], h_band_base_st[i]);
+        }
+    }
+    if (h_band_out) {
+        fprintf(stderr, "    PIOR CASO: quadro %d, retangulo y %.1f..%.1f,"
+                        " %lu linha(s) fora (faixa %d..%d)\n",
+                h_band_frame, h_band_y0, h_band_y1, h_band_worst,
+                g_band_topo, g_band_base);
+    }
+}
 
 void *__wrap_draw_setup_environment(int context, void *fb, void *zb)
 { h_draw_env++; return __real_draw_setup_environment(context, fb, zb); }

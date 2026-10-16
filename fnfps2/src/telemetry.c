@@ -272,13 +272,15 @@ void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
                      u32 music_clock, u32 audio_submitted, u32 ring_level,
                      u32 underruns, int audio_fd, int title_audio_fd,
                      int note_hits, int note_misses, int note_combo,
-                     int note_score, int note_feedback, int event_cursor)
+                     int note_score, int note_feedback, int event_cursor,
+                     u32 band_clip_rects, u32 band_clip_lines,
+                     u32 band_cull_rects)
 {
     char line[512];
     if (!usb_ready) return;
     frames_logged++;
     snprintf(line, sizeof(line),
-        "S,%u,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u,%u,%d,%d,%d,%d,%d,%d,%d,%d",
+        "S,%u,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u,%u,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u",
         frame, ui_state, target_state, selection, story_level, story_diff,
         transition_frame, transitions, transport_state, audio_started,
         audio_playing, menu_audio_suspended, chart_status, tutorial_scene_ready,
@@ -287,7 +289,11 @@ void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
         story_gf_uploaded, story_bf_uploaded, aspect_169, viewport_360,
         music_clock, audio_submitted, ring_level, underruns, audio_fd,
         title_audio_fd, note_hits, note_misses, note_combo, note_score,
-        note_feedback, event_cursor);
+        note_feedback, event_cursor,
+        /* Os tres ultimos: o recorte por software da faixa visivel. Sem eles
+           o log nao explica o que aconteceu com um sprite que saia da faixa --
+           que era exatamente o defeito das capturas do console. */
+        band_clip_rects, band_clip_lines, band_cull_rects);
     write_line(line);
 }
 

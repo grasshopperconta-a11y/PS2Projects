@@ -102,6 +102,17 @@ int sr_song_has_difficulty(const sr_song_t *s, unsigned int diff);
 int sr_chart_path(char *out, unsigned int out_size, const char *root,
                   const sr_song_t *s, const char *difficulty);
 
+/* How many pendrive layouts sr_chart_path_at() knows about. */
+int sr_chart_layout_count(void);
+
+/* The chart path for one specific layout. Layout 0 is the original game's tree
+ * (songs/<id>/<difficulty>.chart); the others are flat fallbacks for pendrives
+ * whose PS2 USB storage driver will not open a nested tree. Returns the length
+ * written, or -1 on a bad argument or an unknown layout. */
+int sr_chart_path_at(char *out, unsigned int out_size, const char *root,
+                     const sr_song_t *s, const char *difficulty,
+                     unsigned int layout);
+
 /* Append "<root>/songs/<id>/Inst.pcm". */
 int sr_instrumental_path(char *out, unsigned int out_size, const char *root,
                          const sr_song_t *s);

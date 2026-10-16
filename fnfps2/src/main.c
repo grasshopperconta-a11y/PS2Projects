@@ -567,11 +567,94 @@ static unsigned short anim_button(int anim)
 static void upload_raw_psm(texbuffer_t*t,unsigned char*source,int w,int h,int psm){packet_t*p=packet_init(256,PACKET_NORMAL);qword_t*q=p->data;q=draw_texture_transfer(q,source,w,h,psm,t->address,t->width);q=draw_texture_flush(q);dma_channel_send_chain(DMA_CHANNEL_GIF,p->data,q-p->data,0,0);dma_wait_fast();packet_free(p);}
 static void upload_raw(texbuffer_t*t,unsigned char*source,int w,int h){packet_t*p=packet_init(256,PACKET_NORMAL);qword_t*q=p->data;q=draw_texture_transfer(q,source,w,h,GS_PSM_32,t->address,t->width);q=draw_texture_flush(q);dma_channel_send_chain(DMA_CHANNEL_GIF,p->data,q-p->data,0,0);dma_wait_fast();packet_free(p);}
 
-static qword_t *sprite_dims(qword_t*q,float x,float y,float w,float h,int tw,int th){g_frame_texture_quads++;texrect_t v;v.v0.x=FNX_INI(x);v.v0.y=FNX_INI(vy(y));v.v0.z=0;v.v1.x=FNX_FIM(x+w);v.v1.y=FNX_FIM(vy(y+h));v.v1.z=0;v.t0.u=.5f;v.t0.v=.5f;v.t1.u=tw-.5f;v.t1.v=th-.5f;v.color=rgba(0x80,0x80,0x80,0x80);dl_sprite(x,y,w,h,0.0f,0.0f,(float)tw,(float)th,0x80,&v);return draw_rect_textured(q,0,&v);}
+/* FAIXA VISIVEL, PUBLICADA PARA AUDITORIA.
+   O harness de link + execucao (test/ps2harness/ps2h.c) nao tem rasterizador:
+   ele conta chamadas e mede pacotes. Para ele poder PROVAR que nada eh
+   desenhado fora da area de jogo -- que eh o defeito que o teste no console
+   mostrou e que um rasterizador de brinquedo nao pegaria -- o jogo publica
+   aqui a faixa que vale naquele momento, e o harness compara cada retangulo
+   texturizado contra ela. Sem isso a unica forma de saber era olhar a captura
+   de tela no console. */
+int g_band_on=0,g_band_topo=0,g_band_base=0;
+int g_ui_state_dbg=-1;   /* estado do menu, so para o harness auditar */
+/* Contadores do recorte por software, para o log do proprio console. Sem eles
+   o unico jeito de saber se a faixa foi respeitada era olhar captura de tela
+   -- que eh justamente o que nao da para fazer de dentro do jogo. */
+unsigned g_band_clip_rects=0,g_band_clip_lines=0,g_band_cull_rects=0;
+static void band_set(int topo,int base){g_band_on=1;g_band_topo=topo;g_band_base=base;}
+static void band_counters_reset(void){g_band_clip_rects=0;g_band_clip_lines=0;g_band_cull_rects=0;}
 
-static qword_t *sprite_region(qword_t*q,float x,float y,float w,float h,float u,float v,float uw,float vh){g_frame_texture_quads++;texrect_t r;r.v0.x=FNX_INI(x);r.v0.y=FNX_INI(vy(y));r.v0.z=0;r.v1.x=FNX_FIM(x+w);r.v1.y=FNX_FIM(vy(y+h));r.v1.z=0;r.t0.u=u+.5f;r.t0.v=v+.5f;r.t1.u=u+uw-.5f;r.t1.v=v+vh-.5f;r.color=rgba(0x80,0x80,0x80,0x80);dl_sprite(x,y,w,h,u,v,uw,vh,0x80,&r);return draw_rect_textured(q,0,&r);}
-static qword_t *sprite_region_phys(qword_t*q,float x,float y0,float w,float hp,float u,float v,float uw,float vh,unsigned char a){g_frame_texture_quads++;texrect_t r;r.v0.x=FNX_INI(x);r.v0.y=FNX_INI(y0);r.v0.z=0;r.v1.x=FNX_FIM(x+w);r.v1.y=FNX_FIM(y0+hp);r.v1.z=0;r.t0.u=u+.5f;r.t0.v=v+.5f;r.t1.u=u+uw-.5f;r.t1.v=v+vh-.5f;r.color=rgba(0x80,0x80,0x80,a);dl_sprite(x,y0,w,hp,u,v,uw,vh,a,&r);return draw_rect_textured(q,0,&r);}
-static qword_t *sprite_region_alpha(qword_t*q,float x,float y,float w,float h,float u,float v,float uw,float vh,unsigned char a){g_frame_texture_quads++;texrect_t r;r.v0.x=FNX_INI(x);r.v0.y=FNX_INI(vy(y));r.v0.z=0;r.v1.x=FNX_FIM(x+w);r.v1.y=FNX_FIM(vy(y+h));r.v1.z=0;r.t0.u=u+.5f;r.t0.v=v+.5f;r.t1.u=u+uw-.5f;r.t1.v=v+vh-.5f;r.color=rgba(0x80,0x80,0x80,a);dl_sprite(x,y,w,h,u,v,uw,vh,a,&r);return draw_rect_textured(q,0,&r);}
+/* RECORTE DA FAIXA VISIVEL, EM SOFTWARE.
+   O scissor do GS (draw_scissor_area com SCISSOR_TOPO/SCISSOR_BASE) nao esta
+   bastando no console: nas capturas do teste o fundo do menu aparece das
+   linhas 46 a 447 e um item inteiro (sprite 3, v 404..462) e desenhado com o
+   scissor em 56..391. A tela de titulo, que usa o mesmo scissor, sai certinha
+   em 56..391 -- ou seja, o problema nao e o valor do scissor e sim o fato de
+   que um sprite grande o atravessa sem ser cortado. Nao da para diagnosticar
+   isso de fora, entao a resposta e nao depender do scissor: recortar aqui e
+   mandar so o pedaco que cabe na faixa. O resultado visual é identico ao de
+   um scissor que funcione.
+   y0..y1 e v0..v1 sao o retangulo fisico e o trecho de textura; saida pelos
+   ponteiros. Devolve 0 quando nao ha nada visivel. */
+static int band_clip_phys(float y0,float y1,float v0,float v1,float*yy0,float*yy1,float*vv0,float*vv1){
+ float top=(float)SCISSOR_TOPO,base=(float)SCISSOR_BASE,h=y1-y0;
+ if(h<=0.0f)return 0;
+ if(y1<=top||y0>=base)return 0;
+ if(y0<top){float f=(top-y0)/h;v0+=(v1-v0)*f;y0=top;}
+ if(y1>base){float f=(base-y0)/h;y1=y0+h*f;v1=v0+(v1-v0)*f;}
+ if(y1<=y0)return 0;
+ *yy0=y0;*yy1=y1;*vv0=v0;*vv1=v1;
+ return 1;
+}
+
+static int band_clip_v(float py0,float py1,float v0,float v1,
+                      float*oy0,float*oy1,float*ov0,float*ov1){
+ float antes,depois;
+ if(!g_band_on)return 1;   /* faixa nao publicada: nao mexe em nada */
+ if(!band_clip_phys(py0,py1,v0,v1,oy0,oy1,ov0,ov1)){
+  g_band_cull_rects++;     /* inteiramente fora: nem sai para o GIF */
+  return 0;
+ }
+ /* Quantas linhas o recorte tirou: a diferenca de altura, na unidade da tela. */
+ antes=py1-py0; depois=*oy1-*oy0;
+ if(antes>depois){
+  g_band_clip_rects++;
+  g_band_clip_lines+=(unsigned)(antes-depois+.5f);
+ }
+ return 1;
+}
+
+/* Ajuste do meio-texel: o inset de 0,5 px evita sangramento da textura
+   vizinha. Quando o recorte encolhe o trecho para menos de um texel os dois
+   extremos se cruzariam e o GIF inverteria a textura -- ai os dois ficam
+   iguais, no centro do trecho que sobrou. */
+static void band_clip_texel(float v0,float v1,float*lo,float*hi){
+ float a=v0+.5f,b=v1-.5f;
+ if(b<=a){float m=(v0+v1)*.5f;a=m;b=m;}
+ *lo=a;*hi=b;
+}
+
+static qword_t *sprite_dims(qword_t*q,float x,float y,float w,float h,int tw,int th){texrect_t v;float cy0,cy1,cv0,cv1;
+ if(!band_clip_v(vy(y),vy(y+h),0.0f,(float)th,&cy0,&cy1,&cv0,&cv1))return q;
+ g_frame_texture_quads++;v.v0.x=FNX_INI(x);v.v0.y=FNX_INI(cy0);v.v0.z=0;v.v1.x=FNX_FIM(x+w);v.v1.y=FNX_FIM(cy1);v.v1.z=0;
+ band_clip_texel(cv0,cv1,&v.t0.v,&v.t1.v);v.t0.u=.5f;v.t1.u=tw-.5f;
+ v.color=rgba(0x80,0x80,0x80,0x80);dl_sprite(x,y,w,h,0.0f,0.0f,(float)tw,(float)th,0x80,&v);return draw_rect_textured(q,0,&v);}
+
+static qword_t *sprite_region(qword_t*q,float x,float y,float w,float h,float u,float v,float uw,float vh){texrect_t r;float cy0,cy1,cv0,cv1;
+ if(!band_clip_v(vy(y),vy(y+h),v,v+vh,&cy0,&cy1,&cv0,&cv1))return q;
+ g_frame_texture_quads++;r.v0.x=FNX_INI(x);r.v0.y=FNX_INI(cy0);r.v0.z=0;r.v1.x=FNX_FIM(x+w);r.v1.y=FNX_FIM(cy1);r.v1.z=0;
+ band_clip_texel(cv0,cv1,&r.t0.v,&r.t1.v);r.t0.u=u+.5f;r.t1.u=u+uw-.5f;
+ r.color=rgba(0x80,0x80,0x80,0x80);dl_sprite(x,y,w,h,u,cv0,uw,cv1-cv0,0x80,&r);return draw_rect_textured(q,0,&r);}
+static qword_t *sprite_region_phys(qword_t*q,float x,float y0,float w,float hp,float u,float v,float uw,float vh,unsigned char a){texrect_t r;float cy0,cy1,cv0,cv1;
+ if(!band_clip_v(y0,y0+hp,v,v+vh,&cy0,&cy1,&cv0,&cv1))return q;
+ g_frame_texture_quads++;r.v0.x=FNX_INI(x);r.v0.y=FNX_INI(cy0);r.v0.z=0;r.v1.x=FNX_FIM(x+w);r.v1.y=FNX_FIM(cy1);r.v1.z=0;
+ band_clip_texel(cv0,cv1,&r.t0.v,&r.t1.v);r.t0.u=u+.5f;r.t1.u=u+uw-.5f;
+ r.color=rgba(0x80,0x80,0x80,a);dl_sprite(x,cy0,w,cy1-cy0,u,cv0,uw,cv1-cv0,a,&r);return draw_rect_textured(q,0,&r);}
+static qword_t *sprite_region_alpha(qword_t*q,float x,float y,float w,float h,float u,float v,float uw,float vh,unsigned char a){texrect_t r;float cy0,cy1,cv0,cv1;
+ if(!band_clip_v(vy(y),vy(y+h),v,v+vh,&cy0,&cy1,&cv0,&cv1))return q;
+ g_frame_texture_quads++;r.v0.x=FNX_INI(x);r.v0.y=FNX_INI(cy0);r.v0.z=0;r.v1.x=FNX_FIM(x+w);r.v1.y=FNX_FIM(cy1);r.v1.z=0;
+ band_clip_texel(cv0,cv1,&r.t0.v,&r.t1.v);r.t0.u=u+.5f;r.t1.u=u+uw-.5f;
+ r.color=rgba(0x80,0x80,0x80,a);dl_sprite(x,y,w,h,u,cv0,uw,cv1-cv0,a,&r);return draw_rect_textured(q,0,&r);}
 static qword_t *text_draw(qword_t*q,const char*s,float x,float y,float scale,int align);
 static unsigned short tutorial_lane_button(unsigned int lane){static const unsigned short masks[4]={PAD_LEFT,PAD_DOWN,PAD_UP,PAD_RIGHT};return lane<4?masks[lane]:0;}
 static void tutorial_notes_reset(void){memset(g_tutorial_note_state,0,sizeof(g_tutorial_note_state));g_tutorial_note_score=0;g_tutorial_note_hits=0;g_tutorial_note_misses=0;g_tutorial_note_combo=0;g_tutorial_note_feedback=0;g_tutorial_note_feedback_frame=0;g_tutorial_note_visible=-1;}
@@ -863,7 +946,17 @@ static int raw_write_chunks(int f,const unsigned char*p,u32 n){while(n){u32 a=n>
    usbhdfsd nao e reentrante e esta funcao grava 1,1 MB nele pela
    thread principal. Sem isso, depois de algumas capturas a musica e
    as animacoes paravam de vez. */
-static int capture_framebuffer_raw(u32 fb,u32 fr,u32 ui){const u32 b0=640u*200u*4u,b1=640u*200u*4u,b2=640u*48u*4u;int r=0;(void)fr;(void)ui;audio_ring_pause(1);if(g_capture_raw_fd<0)r=-2;else if(safe_readback_rect(g_stage_pixels,fb,0,200)!=1)r=-11;else if(raw_write_chunks(g_capture_raw_fd,g_stage_pixels,b0)<0)r=-21;else if(safe_readback_rect(g_stage_pixels,fb,200,200)!=1)r=-12;else if(raw_write_chunks(g_capture_raw_fd,g_stage_pixels,b1)<0)r=-22;else if(safe_readback_rect(g_stage_pixels,fb,400,48)!=1)r=-13;else if(raw_write_chunks(g_capture_raw_fd,g_stage_pixels,b2)<0)r=-23;if(g_capture_raw_fd>=0){fsync(g_capture_raw_fd);close(g_capture_raw_fd);g_capture_raw_fd=-1;}capture_status(r?"RAW_FAILED":"RAW_COMPLETE",r?(-1):448,r);telemetry_event("screen_capture_raw",(int)g_capture_index,r);g_capture_index++;if(r==0){char np[96];snprintf(np,sizeof(np),"mass:/FNFPS2/FNF_SCREEN_%04u.rgba.txt",g_capture_index);g_capture_raw_fd=open(np,O_WRONLY|O_CREAT|O_TRUNC,0666);if(g_capture_raw_fd>=0)fsync(g_capture_raw_fd);}audio_ring_pause(0);return r;}
+static int capture_framebuffer_raw(u32 fb,u32 fr,u32 ui){const u32 b0=640u*200u*4u,b1=640u*200u*4u,b2=640u*48u*4u;int r=0;(void)fr;(void)ui;audio_ring_pause(1);
+ /* AUTO-REPARO DO DESCRITOR DE CAPTURA.
+    O fd era aberto uma unica vez no boot e so reaberto DEPOIS de uma captura
+    que desse certo. Se o open do boot falhasse -- e no teste no console falhou,
+    todas as 10 chamadas devolveram -2 -- nenhuma captura posterior tentava de
+    novo: a captura de tela ficava morta para o resto da sessao e eu perdia
+    justamente a evidencia de que precisava para diagnosticar o resto.
+    Agora, se o fd esta fechado, ele e reaberto aqui, com o proximo numero
+    livre, e a captura segue. O numero so avanca quando a escrita da certo. */
+ if(g_capture_raw_fd<0){char np[96];int nf;g_capture_index++;snprintf(np,sizeof(np),"mass:/FNFPS2/FNF_SCREEN_%04u.rgba.txt",g_capture_index);nf=open(np,O_WRONLY|O_CREAT|O_TRUNC,0666);if(nf>=0){g_capture_raw_fd=nf;fsync(nf);telemetry_event("capture_reopen",(int)g_capture_index,0);}else{telemetry_event("capture_reopen",(int)g_capture_index,nf);g_capture_index--;}}
+ if(g_capture_raw_fd<0)r=-2;else if(safe_readback_rect(g_stage_pixels,fb,0,200)!=1)r=-11;else if(raw_write_chunks(g_capture_raw_fd,g_stage_pixels,b0)<0)r=-21;else if(safe_readback_rect(g_stage_pixels,fb,200,200)!=1)r=-12;else if(raw_write_chunks(g_capture_raw_fd,g_stage_pixels,b1)<0)r=-22;else if(safe_readback_rect(g_stage_pixels,fb,400,48)!=1)r=-13;else if(raw_write_chunks(g_capture_raw_fd,g_stage_pixels,b2)<0)r=-23;if(g_capture_raw_fd>=0){fsync(g_capture_raw_fd);close(g_capture_raw_fd);g_capture_raw_fd=-1;}capture_status(r?"RAW_FAILED":"RAW_COMPLETE",r?(-1):448,r);telemetry_event("screen_capture_raw",(int)g_capture_index,r);g_capture_index++;if(r==0&&g_capture_raw_fd<0){char np[96];snprintf(np,sizeof(np),"mass:/FNFPS2/FNF_SCREEN_%04u.rgba.txt",g_capture_index);g_capture_raw_fd=open(np,O_WRONLY|O_CREAT|O_TRUNC,0666);if(g_capture_raw_fd>=0)fsync(g_capture_raw_fd);}audio_ring_pause(0);return r;}
 /* =====================================================================
    DESPEJO DE ESTADO COMPLETO
    SELECT+R1 grava mass:/FNFPS2/FNF_ESTADO.txt com tudo que da para
@@ -1129,6 +1222,13 @@ static void estado_dump(const estado_t *e)
     write_all_fd(fd, b, k);
 
     k = snprintf(b, sizeof(b),
+        "\n[FAIXA] visivel %d..%d | recortados %u retangulo(s), %u linha(s) tiradas"
+        " | descartados %u inteiramente fora\n",
+        SCISSOR_TOPO, SCISSOR_BASE,
+        g_band_clip_rects, g_band_clip_lines, g_band_cull_rects);
+    write_all_fd(fd, b, k);
+
+    k = snprintf(b, sizeof(b),
         "\n[ENTRADA] held 0x%04X pressed 0x%04X\n"
         "\n[DESENHO] ultima lista: %d sprites, quads texturizados no quadro %d\n",
         (unsigned)e->held, (unsigned)e->pressed, g_dl_n, g_frame_texture_quads);
@@ -1159,7 +1259,7 @@ int main(int argc,char**argv){framebuffer_t fb[2];zbuffer_t z;texbuffer_t tex,te
  stagetex.width=512;stagetex.psm=GS_PSM_32;stagetex.address=graph_vram_allocate(512,256,GS_PSM_32,GRAPH_ALIGN_BLOCK);
  fonttex.width=384;fonttex.psm=GS_PSM_32;fonttex.address=graph_vram_allocate(384,256,GS_PSM_32,GRAPH_ALIGN_BLOCK);
  telemetry_event("fb0",(int)fb[0].address,(SCREEN_W<<16)|SCREEN_H);telemetry_event("fb1",(int)fb[1].address,(SCREEN_W<<16)|SCREEN_H);telemetry_event("tex",(int)tex.address,(320<<16)|256);telemetry_event("tex2",(int)tex2.address,(320<<16)|256);telemetry_event("gftex",(int)gftex.address,(256<<16)|256);telemetry_event("stagetex",(int)stagetex.address,(512<<16)|256);telemetry_event("fonttex",(int)fonttex.address,(384<<16)|256);telemetry_event("tex1_fix",LOD_MIPMAP_REGISTER,0);telemetry_event("stage_src",g_official_mainstage_props[0].z,g_official_mainstage_chars[2].z);telemetry_event("stage_zoom",(int)(g_official_mainstage_camera_zoom*1000.0f),(int)g_official_mainstage_chars[0].x);telemetry_event("idle_blend",1,2);telemetry_event("merch_trim",59,3);capture_status("GS_BEGIN",-1,0);graph_initialize(fb[0].address,SCREEN_W,SCREEN_H,GS_PSM_32,0,0);graph_set_bgcolor(0,0,0);packet=packet_init(4096,PACKET_NORMAL);setup_texture(&tex);setup_texture_dims(&tex2,320,256);setup_texture_dims(&gftex,g_gf.width,g_gf.height);setup_texture_dims(&stagetex,512,256);setup_texture_dims(&fonttex,FONT_W,FONT_H);capture_status("GS_ENV_READY",-1,0);if(read_exact_path("mass:/FNFPS2/assets/title_alphabet.rgba",g_font_pixels,384*192*4)==0){setup_texture_dims(&fonttex,384,192);upload_raw(&fonttex,g_font_pixels,384,192);memcpy(g_menu_pixels+TITLE_SNAPSHOT_ALPHA,g_font_pixels,384*192*4);capture_status("TITLE_ALPHA_READY",-1,0);}if(read_exact_path("mass:/FNFPS2/assets/title_prompt_l.rgba",g_stage_pixels,512*192*4)==0){setup_texture_dims(&stagetex,512,192);upload_raw(&stagetex,g_stage_pixels,512,192);memcpy(g_menu_pixels+TITLE_SNAPSHOT_PROMPT_L,g_stage_pixels,512*192*4);capture_status("TITLE_PROMPT_L_READY",-1,0);}if(read_exact_path("mass:/FNFPS2/assets/title_prompt_r.rgba",g_hud_pixels,320*192*4)==0){setup_texture_dims(&tex2,320,192);upload_raw(&tex2,g_hud_pixels,320,192);memcpy(g_menu_pixels+TITLE_SNAPSHOT_PROMPT_R,g_hud_pixels,320*192*4);capture_status("TITLE_PROMPT_R_READY",-1,0);}if(read_exact_path("mass:/FNFPS2/assets/title_logoBumpin.frames",g_gf_pixels,TITLE_LOGO_FRAME_BYTES)==0&&read_exact_path("mass:/FNFPS2/assets/title_gfDanceTitle.frames",g_gf_pixels+TITLE_GF_STORE_OFFSET,TITLE_GF_FRAME_BYTES)==0){setup_texture_dims(&tex,TITLE_LOGO_W,TITLE_LOGO_H);gftex.width=256;setup_texture_dims(&gftex,TITLE_GF_W,TITLE_GF_H);upload_raw(&tex,g_gf_pixels,TITLE_LOGO_W,TITLE_LOGO_H);menu_anim_tick=-1;upload_raw(&gftex,g_gf_pixels+TITLE_GF_STORE_OFFSET,TITLE_GF_W,TITLE_GF_H);menu_anim_tick=-1;capture_status("TITLE_LOGO_GF_READY",-1,0);}if(read_exact_path("mass:/FNFPS2/assets/title_newgrounds.rgba",g_gf_pixels+TITLE_NG_STORE_OFFSET,181*175*4)==0){setup_texture_dims(&tex,181,175);upload_raw(&tex,g_gf_pixels+TITLE_NG_STORE_OFFSET,181,175);menu_anim_tick=-1;capture_status("TITLE_NG_READY",-1,0);} {int anim_rc=title_animation_cache_start();telemetry_event("title_anim_cache",anim_rc==0,anim_rc);telemetry_event("title_cache_policy",TITLE_CACHE_READ_CHUNK,TITLE_CACHE_AUDIO_RESERVE);}capture_status("FIRST_FRAME_PENDING",-1,0);{packet_t*tp=packet_init(8,PACKET_NORMAL);qword_t*tq=tp->data;tq->dw[0]=GIF_SET_TAG(1,1,0,0,GIF_FLG_PACKED,1);tq->dw[1]=GIF_REG_AD;tq++;tq->dw[0]=((u64)0x80<<32);tq->dw[1]=GS_REG_TEXA;tq++;dma_channel_send_normal(DMA_CHANNEL_GIF,tp->data,tq-tp->data,0,0);dma_wait_fast();packet_free(tp);telemetry_event("texa",0x80,0);}capture_status("F0_BLEND_BEGIN",-1,0);draw_enable_blending();capture_status("F0_BLEND_DONE",-1,0);
- while(running){u64 begin,after_draw,after_vsync;unsigned short pressed;if(frame_no==0){capture_status("F0_LOOP_ENTER",-1,0);}begin=GetTimerSystemTime();g_frame_texture_quads=0;if(g_congelar){g_congelar=0;fnx_congelado2(-1,frame_no,ui_state,selection,menu_cam_y,g_held);g_cong_frames=180;}if(g_cong_frames>0){g_cong_frames--;graph_wait_vsync();continue;}if(frame_no==0){capture_status("F0_TIMER_DONE",-1,0);}if(frame_no==0){capture_status("F0_PAD_READ_BEGIN",-1,0);}pressed=buttons_pressed();if(frame_no==0){capture_status("F0_PAD_READ_DONE",-1,(int)pressed);}g_viewport_360=(ui_state==0||ui_state==6||ui_state==7||ui_state==8);unsigned local,global;u32 heard,queued_bytes,ring_bytes;qword_t*q;int qw,i;
+ while(running){u64 begin,after_draw,after_vsync;unsigned short pressed;if(frame_no==0){capture_status("F0_LOOP_ENTER",-1,0);}begin=GetTimerSystemTime();g_frame_texture_quads=0;band_counters_reset();if(g_congelar){g_congelar=0;fnx_congelado2(-1,frame_no,ui_state,selection,menu_cam_y,g_held);g_cong_frames=180;}if(g_cong_frames>0){g_cong_frames--;graph_wait_vsync();continue;}if(frame_no==0){capture_status("F0_TIMER_DONE",-1,0);}if(frame_no==0){capture_status("F0_PAD_READ_BEGIN",-1,0);}pressed=buttons_pressed();if(frame_no==0){capture_status("F0_PAD_READ_DONE",-1,(int)pressed);}g_viewport_360=(ui_state==0||ui_state==6||ui_state==7||ui_state==8);g_ui_state_dbg=ui_state;unsigned local,global;u32 heard,queued_bytes,ring_bytes;qword_t*q;int qw,i;
   if(g_title_anim_thread_id>=0&&g_title_anim_status!=2)g_title_anim_thread_id=-1;
  /* START sozinho encerrava o jogo em qualquer tela fora do Tutorial.
    No oficial START confirma, nunca sai. Sair exige SELECT+START, que
@@ -1320,10 +1420,13 @@ if((pressed&PAD_START)&&(g_held&PAD_SELECT))running=0;
   {const sr_song_t*song=sr_song_by_id("tutorial");
    const char*diff=(story_diff==0)?"easy":(story_diff==2)?"hard":"normal";
    if(song){
-    char chart_path[160];
-    if(sr_chart_path(chart_path,sizeof(chart_path),FNF_ASSET_ROOT,song,diff)>0)
-     g_chart_status=chart_load(chart_path,&g_chart_info);
-    else g_chart_status=-2;
+    int layout=-1;
+    /* NAO e so o caminho do jogo original: no console o arquivo estava la, no
+       caminho exato, e o open() devolvia -1 do mesmo jeito. Tentar os layouts
+       planos e a unica defesa possivel quando o log nao consegue dizer qual
+       foi a falha. O layout que abrir sai no telemetria. */
+    g_chart_status=chart_load_song_layout(FNF_ASSET_ROOT,song,diff,&g_chart_info,&layout);
+    telemetry_event("chart_layout",layout,g_chart_status);
    } else g_chart_status=-3;
    telemetry_event("chart_path",g_chart_status,(int)(song?song->bpm*1000.0f:0));}
   /* The event module reads the chart through the same loader, so it needs the
@@ -1463,8 +1566,17 @@ tutorial_packs_free();story_assets_ready=0;target_state=7;transition_frame=1;tra
       lembra 4:3 esticado em vez do aspecto do original.
       A ordem importa: o scissor vem DEPOIS do clear, senao o clear respeitaria
       o scissor e as barras ficariam com o quadro anterior. */
-   mq=draw_scissor_area(mq,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);
-   mq=sprite_dims(mq,-64.0f,bg_y,768.0f,435.956454f,512,256);
+   mq=draw_scissor_area(mq,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);band_set(SCISSOR_TOPO,SCISSOR_BASE);
+   /* O fundo mede 435,956 linhas virtuais, o que da 406,9 linhas fisicas:
+      mais que a faixa visivel de 56..391. Recortado aqui em software porque
+      o scissor do GS nao o esta cortando no console (ver band_clip_phys). */
+   /* O recorte em si agora acontece dentro de sprite_region_phys, que eh o
+      gargalo por onde passam TODOS os sprites -- assim um unico lugar responde
+      por isso e o contador de linhas recortadas (que vai para o log) mede o
+      que realmente saiu do GIF, nao uma conta paralela. */
+   mq=sprite_region_phys(mq,-64.0f,vy(bg_y),768.0f,
+                         vy(bg_y+435.956454f)-vy(bg_y),
+                         0.0f,0.0f,512.0f,256.0f,0x80);
    /* 0.2.105 C6: o magenta do original (MainMenuState.hx L128-132) nao e um
       retangulo fixo na tela: menuBGMagenta herda scrollFactor, x, y e
       largura do bg. A 0.2.104 desenhava rect(0,0,640,360) fixo. Agora o
@@ -1488,7 +1600,7 @@ if(!menu_placeholder){int sel4=(selection==4),af4=sel4?(tick%3):g_menu_idle_time
   q=packet->data;q=draw_setup_environment(q,0,&fb[draw],&z);/* NAO limpar no estado 6. O menu desenha o fundo num pacote proprio,
    que JA FOI ENVIADO ao GS antes deste. Limpar aqui apaga o fundo e
    deixa a tela preta. Foi o que eu causei na 0.2.82. */
-if(ui_state!=6){q=draw_clear(q,0,0,0,SCREEN_W,SCREEN_H,(ui_state==0||ui_state==1||ui_state==6||ui_state==7||ui_state==8)?0:(24),(ui_state==0||ui_state==1||ui_state==6||ui_state==7||ui_state==8)?0:(18),(ui_state==0||ui_state==1||ui_state==6||ui_state==7||ui_state==8)?0:(40));}if(ui_state==0||ui_state==6||ui_state==7||ui_state==8)q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);
+if(ui_state!=6){q=draw_clear(q,0,0,0,SCREEN_W,SCREEN_H,(ui_state==0||ui_state==1||ui_state==6||ui_state==7||ui_state==8)?0:(24),(ui_state==0||ui_state==1||ui_state==6||ui_state==7||ui_state==8)?0:(18),(ui_state==0||ui_state==1||ui_state==6||ui_state==7||ui_state==8)?0:(40));}if(ui_state==0||ui_state==6||ui_state==7||ui_state==8){q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);band_set(SCISSOR_TOPO,SCISSOR_BASE);}
   if(ui_state==7){const short*df=g_story_uv[1+story_diff];const short*la=g_story_uv[(g_held&PAD_LEFT)?6:4];const short*ra=g_story_uv[(g_held&PAD_RIGHT)?7:5];float dp=story_diff_tween>=5?1.0f:story_diff_tween/5.0f,dy=(232.5f+(245.0f-232.5f)*dp)-(df[3]-g_story_uv[2][3])*.5f;unsigned char da=(unsigned char)(128.0f*dp);q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);q=rect(q,0,0,640,28,0,0,0);q=rect(q,0,28,640,228,249,207,81);q=rect(q,0,228,640,360,0,0,0);q=bind_texture_filter(q,&fonttex,1);g_story_vcr_vbase=0;q=story_vcr(q,"LEVEL SCORE: 0",5,5,0,128,128,128,128);g_story_vcr_vbase=0;q=story_vcr(q,g_story_names[story_level],635,5,2,128,128,128,90);g_story_vcr_vbase=0;q=story_vcr(q,"TRACKS",108,251,1,115,44,60,128);q=story_vcr(q,g_story_tracks[story_level],108,283,1,115,44,60,128);q=bind_texture_filter(q,&stagetex,0);q=sprite_region(q,435,240,la[2],la[3],la[0],la[1],la[2],la[3]);q=sprite_region_alpha(q,435+g_story_uv[4][2]+5+(g_story_uv[2][2]-df[2])*.5f,dy,df[2],df[3],df[0],df[1],df[2],df[3],da);if(story_diff_tween<5)story_diff_tween++;q=sprite_region(q,622.5f,240,ra[2],ra[3],ra[0],ra[1],ra[2],ra[3]);if(story_level==0&&g_story_anim_ready){q=bind_texture_filter(q,&tex2,1);q=sprite_dims(q,40.0f,40.0f,170,157,170,157);q=bind_texture_filter(q,&gftex,1);q=sprite_dims(q,235.0f,40.0f,164,165,164,165);}q=draw_scissor_area(q,0,0,SCREEN_W-1,0,SCREEN_H-1);}
   if(ui_state==0&&!title_intro_active){q=bind_texture(q,&tex);q=sprite_dims(q,-75.0f,-50.0f,469.5f,351.5f,TITLE_LOGO_W,TITLE_LOGO_H);q=bind_texture(q,&gftex);q=sprite_dims(q,256.0f,25.2f,360.5f,331.0f,TITLE_GF_W,TITLE_GF_H);}
   if(ui_state==6){q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);int order,mi;float camoff=(menu_cam_y-360.0f)*0.4f;texbuffer_t*mt[5]={&fonttex,&tex,&gftex,&tex2,&stagetex};if(!menu_placeholder)for(order=0;order<5;order++){mi=(order==4)?selection:(order>=selection?order+1:order);if(mi>=5)continue;{int selected=(mi==selection),af=selected?((int)(frame_no*24u/60u)%3):g_menu_idle_timeline[mi][(frame_no*24u/60u)%9u];const unsigned int*fr=g_menu_frame_rw[mi][selected][af];float cy=(40.0f+160.0f*mi-camoff)*.5f;if(selected&&(!g_fl_item_vis||menu_exit_frames))continue;
@@ -1562,7 +1674,13 @@ if(ui_state!=6){q=draw_clear(q,0,0,0,SCREEN_W,SCREEN_H,(ui_state==0||ui_state==1
 /* 0.2.105 C7: com o atlas ja reamostrado para hp linhas, o blit e 1:1 em
         linhas fisicas: topo = round(vy(cy) - hp/2). Nenhum texel e descartado
         ou duplicado, para qualquer fase de dy. */
-{float y0r=floorf(cyphys-(float)fr[2]*0.5f+0.5f);q=sprite_region_phys(q,dx,y0r,(float)fr[1],(float)fr[2],0,0,(int)fr[1],(int)fr[2],fa2);}}}
+{float y0r=floorf(cyphys-(float)fr[2]*0.5f+0.5f);
+  /* Mesmo motivo do fundo: um item que deslizou para fora da faixa precisa
+     ser descartado ou recortado dentro do helper, nao pelo scissor do GS.
+     Sem isto, ao voltar do tutorial o menu mostra botoes inteiros flutuando
+     fora da area de jogo, que e o defeito que o teste relatou. */
+   q=sprite_region_phys(q,dx,y0r,(float)fr[1],(float)fr[2],
+                        0.0f,0.0f,(float)fr[1],(float)fr[2],fa2);}}}
   q=draw_primitive_override(q,0);}}}if(menu_placeholder){q=rect(q,70,71,570,291,12,10,18);q=bind_texture_filter(q,&fonttex,1);q=text_draw(q,selection==1?"FREEPLAY":selection==2?"MERCH":selection==3?"OPTIONS":"CREDITS",320,136,1.4f,1);q=text_draw(q,"COMING IN NEXT STAGE",320,181,.9f,1);q=text_draw(q,"CIRCLE  RETURN",320,226,.9f,1);}
 /* A marca de versao NAO pode ficar aqui. No estado 6 as cinco
    texturas guardam os cinco itens do menu, e mt[0] e justamente a
@@ -1583,7 +1701,7 @@ q=draw_scissor_area(q,0,0,SCREEN_W-1,0,SCREEN_H-1);}
    q=rect(q,330,158,330+slider_value*15,174,245,70,150);
   }else if(ui_state==0){
    /* Official title atlas; no provisional menu rectangles. */
-  }else if(ui_state==8&&g_tutorial_scene_ready){q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);/* Official character-space reconstruction. BFA2 canvases are already stored at half of the original 1280x720 character canvas, while stage positions and metadata offsets remain original-space values. Final top-left follows Stage.addCharacter/BaseCharacter.setScale: feet - full canvas origin + per-character global offset. Camera focus follows BaseCharacter.resetCameraFocusPoint plus stage camera offset. */{const chart_event_state_t*ev=chart_events_state();chart_events_tick(TUT_DT,music_clock/TUT_SAMPLES_PER_STEP);g_tut_zoom=ev->zoom;g_tut_scroll=ev->scroll;g_tut_bop=ev->bop;}float sc=.5f*g_tut_zoom*g_tut_bop;const float bf_source_w=496.920f,bf_source_h=490.920f,bf_pack_scale=.5f,gf_source_w=703.300f,gf_source_h=674.850f,gf_pack_scale=.443623f;/* A GF ocupa o slot gf [751.5,787], provado pela captura do jogo real:
+  }else if(ui_state==8&&g_tutorial_scene_ready){q=draw_scissor_area(q,0,0,SCREEN_W-1,SCISSOR_TOPO,SCISSOR_BASE);band_set(SCISSOR_TOPO,SCISSOR_BASE);/* Official character-space reconstruction. BFA2 canvases are already stored at half of the original 1280x720 character canvas, while stage positions and metadata offsets remain original-space values. Final top-left follows Stage.addCharacter/BaseCharacter.setScale: feet - full canvas origin + per-character global offset. Camera focus follows BaseCharacter.resetCameraFocusPoint plus stage camera offset. */{const chart_event_state_t*ev=chart_events_state();chart_events_tick(TUT_DT,music_clock/TUT_SAMPLES_PER_STEP);g_tut_zoom=ev->zoom;g_tut_scroll=ev->scroll;g_tut_bop=ev->bop;}float sc=.5f*g_tut_zoom*g_tut_bop;const float bf_source_w=496.920f,bf_source_h=490.920f,bf_pack_scale=.5f,gf_source_w=703.300f,gf_source_h=674.850f,gf_pack_scale=.443623f;/* A GF ocupa o slot gf [751.5,787], provado pela captura do jogo real:
    a arte dela comeca em 6 px dentro da tela de 255x245 do pack, o que
    da 6/0,35 = 17,14 unidades de mundo. No slot dad isso cairia em
    -181,5 de tela, fora do ecra; no slot gf cai em +47,6, visivel.
@@ -1631,7 +1749,7 @@ q=draw_scissor_area(q,0,0,SCREEN_W-1,0,SCREEN_H-1);}
   if(transition_frame>0){int tm=menu_back_transition?42:15,te=menu_back_transition?102:30,p=transition_frame<=tm?transition_frame:(te-transition_frame);unsigned char a=(unsigned char)(transition_frame<=tm?((p*0x80)/tm):((p*0x80)/(te-tm)));q=rect_alpha(q,0,0,SCREEN_W,SCREEN_H,0,0,0,a);}
   if(g_calib){q=draw_scissor_area(q,0,0,SCREEN_W-1,0,SCREEN_H-1);
               q=desenhar_calibracao(q);}
-  q=draw_finish(q);qw=(int)(q-packet->data);if(frame_no==0)capture_status("F0_PACKET_DONE",-1,qw);dma_channel_send_normal(DMA_CHANNEL_GIF,packet->data,qw,0,0);if(frame_no==0)capture_status("F0_DMA_SENT",-1,0);draw_wait_finish();if(frame_no==0)capture_status("F0_DRAW_FINISH_DONE",-1,0);if(ui_state==7&&transition_frame==0){int si;story_title_update_positions(story_level);for(si=0;si<9;si++){const unsigned int*sr=g_story_title[si];float yy=g_story_title_y[si]-44.0f,hh=(float)sr[2];if(vy(yy+hh)<269.0f||vy(yy)>391.0f)continue;story_upload_title(&tex,si);menu_anim_tick=-1;{qword_t*tq=packet->data;tq=draw_setup_environment(tq,0,&fb[draw],&z);tq=draw_scissor_area(tq,0,0,SCREEN_W-1,269,391);tq=bind_texture_filter(tq,&tex,0);tq=sprite_region_alpha(tq,320.0f-(float)sr[1]*.5f,yy,(float)sr[1],hh,0,0,(float)sr[1],hh,si==story_level?128:77);tq=draw_finish(tq);dma_channel_send_normal(DMA_CHANNEL_GIF,packet->data,tq-packet->data,0,0);draw_wait_finish();}}}after_draw=GetTimerSystemTime();if((g_held&(PAD_SELECT|PAD_R3))!=(PAD_SELECT|PAD_R3))g_capture_chord_latched=0;if(!g_cap_busy&&(g_forcar_captura||(!g_capture_chord_latched&&transition_frame==0&&(g_held&(PAD_SELECT|PAD_R3))==(PAD_SELECT|PAD_R3)&&(pressed&(PAD_SELECT|PAD_R3))))){g_forcar_captura=0;int cr,rr=0,endpos,restore_rc=-1;u32 saved_sample=0;int capture_ui=ui_state;g_capture_chord_latched=1;if(capture_ui==8&&audio_fd>=0&&g_tutorial_audio_status==0){{u32 aq_t=(u32)audsrv_queued();saved_sample=audio_submitted>=aq_t/4u?audio_submitted-aq_t/4u:0u;if(saved_sample>TUTORIAL_AUDIO_SAMPLES)saved_sample=TUTORIAL_AUDIO_SAMPLES;}capture_status("RAW_TUT_PAUSE",(int)frame_no,(int)saved_sample);audsrv_stop_audio();audio_playing=0;audio_started=0;clock_hold=1;transport_state=0;audio_ring_stop();close(audio_fd);audio_fd=-1;DelayThread(500000);cr=capture_framebuffer_raw(fb[draw].address<<5,frame_no,ui_state);audio_fd=open("mass:/FNFPS2/assets/audio_stems.pcm",O_RDONLY);if(audio_fd>=0){endpos=(int)lseek(audio_fd,0,SEEK_END);if(endpos>0){u64 bp=(u64)saved_sample*8u;if(bp>(u64)(u32)endpos)bp=(u64)(u32)endpos;lseek(audio_fd,(int)bp,SEEK_SET);}restore_rc=audio_ring_start(audio_fd);if(restore_rc==0){audio_submitted=music_clock=saved_sample;music_clock_tick=GetTimerSystemTime();music_clock_fraction=0;clock_hold=1;audio_playing=1;audio_started=0;transport_state=1;g_tutorial_audio_status=0;}else{close(audio_fd);audio_fd=-1;g_tutorial_audio_status=-8;}}capture_status(restore_rc==0?"RAW_TUT_RESUMED":"RAW_TUT_RESUME_FAIL",(int)frame_no,restore_rc);telemetry_event("capture_tutorial",cr,restore_rc);}else if(g_title_audio_fd>=0){u32 aq=(u32)audsrv_queued(),menu_heard=g_title_audio_submitted>=aq/4u?g_title_audio_submitted-aq/4u:0;capture_status("RAW_MENU_PAUSE",(int)frame_no,(int)menu_heard);audsrv_stop_audio();g_menu_audio_suspended=1;audio_ring_stop();close(g_title_audio_fd);g_title_audio_fd=-1;DelayThread(500000);cr=capture_framebuffer_raw(fb[draw].address<<5,frame_no,ui_state);if(cr==0&&ui_state==7)rr=story_titles_restore();else if(cr==0&&ui_state==0)memcpy(g_stage_pixels,g_menu_pixels+TITLE_SNAPSHOT_PROMPT_L,512*192*4);g_title_audio_fd=open("mass:/FNFPS2/assets/freakyMenu_48000.pcm",O_RDONLY);if(g_title_audio_fd>=0){endpos=(int)lseek(g_title_audio_fd,0,SEEK_END);if(endpos>0)lseek(g_title_audio_fd,(int)((menu_heard*4u)%(u32)endpos),SEEK_SET);g_title_audio_submitted=menu_heard;if(audio_ring_start_loop(g_title_audio_fd,1)>=0){int guard=2000;while(audio_ring_level()<65536&&guard--){DelayThread(1000);}guard=64;while(audsrv_available()>=AUDIO_READ_CHUNK&&guard--){int n,j;if((n=audio_ring_take(g_audio_pcm,AUDIO_READ_CHUNK))!=AUDIO_READ_CHUNK){DelayThread(1000);continue;}j=audio_play_complete((char*)g_audio_pcm,n);if(j<=0)break;g_title_audio_submitted+=(u32)(j/4);}g_menu_audio_suspended=0;restore_rc=0;}}capture_status(restore_rc==0?"RAW_MENU_RESUMED":"RAW_MENU_RESUME_FAIL",(int)frame_no,restore_rc);telemetry_event("capture_menu",cr,rr);}else{capture_status("RAW_NO_TRANSPORT",(int)frame_no,ui_state);}}if(frame_no==0)capture_status("F0_VSYNC_BEGIN",-1,0);graph_wait_vsync();if(frame_no==0)capture_status("F0_VSYNC_DONE",-1,0);graph_set_framebuffer_filtered(fb[draw].address,SCREEN_W,GS_PSM_32,0,0);if(frame_no==0)capture_status("F0_FRAMEBUFFER_SET",-1,0);after_vsync=GetTimerSystemTime();if(deferred_menu_start&&frame_no>=3u){deferred_menu_start=0;capture_status("DEFERRED_AUDIO_BEGIN",-1,0);if(audio_ok&&audio_set_stream(audio_volume)==0){g_title_audio_fd=open("mass:/FNFPS2/assets/freakyMenu_48000.pcm",O_RDONLY);if(g_title_audio_fd>=0)audio_ring_start_loop(g_title_audio_fd,1);}}
+  q=draw_finish(q);qw=(int)(q-packet->data);if(frame_no==0)capture_status("F0_PACKET_DONE",-1,qw);dma_channel_send_normal(DMA_CHANNEL_GIF,packet->data,qw,0,0);if(frame_no==0)capture_status("F0_DMA_SENT",-1,0);draw_wait_finish();if(frame_no==0)capture_status("F0_DRAW_FINISH_DONE",-1,0);if(ui_state==7&&transition_frame==0){int si;story_title_update_positions(story_level);for(si=0;si<9;si++){const unsigned int*sr=g_story_title[si];float yy=g_story_title_y[si]-44.0f,hh=(float)sr[2];if(vy(yy+hh)<269.0f||vy(yy)>391.0f)continue;story_upload_title(&tex,si);menu_anim_tick=-1;{qword_t*tq=packet->data;tq=draw_setup_environment(tq,0,&fb[draw],&z);tq=draw_scissor_area(tq,0,0,SCREEN_W-1,269,391);band_set(269,391);tq=bind_texture_filter(tq,&tex,0);tq=sprite_region_alpha(tq,320.0f-(float)sr[1]*.5f,yy,(float)sr[1],hh,0,0,(float)sr[1],hh,si==story_level?128:77);tq=draw_finish(tq);dma_channel_send_normal(DMA_CHANNEL_GIF,packet->data,tq-packet->data,0,0);draw_wait_finish();}}}after_draw=GetTimerSystemTime();if((g_held&(PAD_SELECT|PAD_R3))!=(PAD_SELECT|PAD_R3))g_capture_chord_latched=0;if(!g_cap_busy&&(g_forcar_captura||(!g_capture_chord_latched&&transition_frame==0&&(g_held&(PAD_SELECT|PAD_R3))==(PAD_SELECT|PAD_R3)&&(pressed&(PAD_SELECT|PAD_R3))))){g_forcar_captura=0;int cr,rr=0,endpos,restore_rc=-1;u32 saved_sample=0;int capture_ui=ui_state;g_capture_chord_latched=1;if(capture_ui==8&&audio_fd>=0&&g_tutorial_audio_status==0){{u32 aq_t=(u32)audsrv_queued();saved_sample=audio_submitted>=aq_t/4u?audio_submitted-aq_t/4u:0u;if(saved_sample>TUTORIAL_AUDIO_SAMPLES)saved_sample=TUTORIAL_AUDIO_SAMPLES;}capture_status("RAW_TUT_PAUSE",(int)frame_no,(int)saved_sample);audsrv_stop_audio();audio_playing=0;audio_started=0;clock_hold=1;transport_state=0;audio_ring_stop();close(audio_fd);audio_fd=-1;DelayThread(500000);cr=capture_framebuffer_raw(fb[draw].address<<5,frame_no,ui_state);audio_fd=open("mass:/FNFPS2/assets/audio_stems.pcm",O_RDONLY);if(audio_fd>=0){endpos=(int)lseek(audio_fd,0,SEEK_END);if(endpos>0){u64 bp=(u64)saved_sample*8u;if(bp>(u64)(u32)endpos)bp=(u64)(u32)endpos;lseek(audio_fd,(int)bp,SEEK_SET);}restore_rc=audio_ring_start(audio_fd);if(restore_rc==0){audio_submitted=music_clock=saved_sample;music_clock_tick=GetTimerSystemTime();music_clock_fraction=0;clock_hold=1;audio_playing=1;audio_started=0;transport_state=1;g_tutorial_audio_status=0;}else{close(audio_fd);audio_fd=-1;g_tutorial_audio_status=-8;}}capture_status(restore_rc==0?"RAW_TUT_RESUMED":"RAW_TUT_RESUME_FAIL",(int)frame_no,restore_rc);telemetry_event("capture_tutorial",cr,restore_rc);}else if(g_title_audio_fd>=0){u32 aq=(u32)audsrv_queued(),menu_heard=g_title_audio_submitted>=aq/4u?g_title_audio_submitted-aq/4u:0;capture_status("RAW_MENU_PAUSE",(int)frame_no,(int)menu_heard);audsrv_stop_audio();g_menu_audio_suspended=1;audio_ring_stop();close(g_title_audio_fd);g_title_audio_fd=-1;DelayThread(500000);cr=capture_framebuffer_raw(fb[draw].address<<5,frame_no,ui_state);if(cr==0&&ui_state==7)rr=story_titles_restore();else if(cr==0&&ui_state==0)memcpy(g_stage_pixels,g_menu_pixels+TITLE_SNAPSHOT_PROMPT_L,512*192*4);g_title_audio_fd=open("mass:/FNFPS2/assets/freakyMenu_48000.pcm",O_RDONLY);if(g_title_audio_fd>=0){endpos=(int)lseek(g_title_audio_fd,0,SEEK_END);if(endpos>0)lseek(g_title_audio_fd,(int)((menu_heard*4u)%(u32)endpos),SEEK_SET);g_title_audio_submitted=menu_heard;if(audio_ring_start_loop(g_title_audio_fd,1)>=0){int guard=2000;while(audio_ring_level()<65536&&guard--){DelayThread(1000);}guard=64;while(audsrv_available()>=AUDIO_READ_CHUNK&&guard--){int n,j;if((n=audio_ring_take(g_audio_pcm,AUDIO_READ_CHUNK))!=AUDIO_READ_CHUNK){DelayThread(1000);continue;}j=audio_play_complete((char*)g_audio_pcm,n);if(j<=0)break;g_title_audio_submitted+=(u32)(j/4);}g_menu_audio_suspended=0;restore_rc=0;}}capture_status(restore_rc==0?"RAW_MENU_RESUMED":"RAW_MENU_RESUME_FAIL",(int)frame_no,restore_rc);telemetry_event("capture_menu",cr,rr);}else{capture_status("RAW_NO_TRANSPORT",(int)frame_no,ui_state);}}if(frame_no==0)capture_status("F0_VSYNC_BEGIN",-1,0);graph_wait_vsync();if(frame_no==0)capture_status("F0_VSYNC_DONE",-1,0);graph_set_framebuffer_filtered(fb[draw].address,SCREEN_W,GS_PSM_32,0,0);if(frame_no==0)capture_status("F0_FRAMEBUFFER_SET",-1,0);after_vsync=GetTimerSystemTime();if(deferred_menu_start&&frame_no>=3u){deferred_menu_start=0;capture_status("DEFERRED_AUDIO_BEGIN",-1,0);if(audio_ok&&audio_set_stream(audio_volume)==0){g_title_audio_fd=open("mass:/FNFPS2/assets/freakyMenu_48000.pcm",O_RDONLY);if(g_title_audio_fd>=0)audio_ring_start_loop(g_title_audio_fd,1);}}
   if(g_dl_gravando){g_dl_gravando=0;dl_gravar();}
    telemetry_frame(frame_no++,begin,after_draw,after_vsync,pressed,anim,(int)local,(int)global,g_frame_texture_quads,qw,transition_frame?10+(transition_frame>15):(components_mode?4:(transform_mode?3:ui_state)),transitions,heard,queued_bytes,ring_bytes,audio_underruns);
    /* Uma linha de estado por quadro, e o log despejado no mesmo instante. A
@@ -1639,7 +1757,7 @@ q=draw_scissor_area(q,0,0,SCREEN_W-1,0,SCREEN_H-1);}
       pendurasse -- que eh o caso que se quer investigar -- o arquivo ficava
       vazio. Agora cada quadro deixa rastro no cartao, e da para ver exatamente
       em qual ui_state e em qual transicao a coisa parou. */
-   telemetry_state(frame_no-1,ui_state,target_state,selection,story_level,story_diff,transition_frame,transitions,transport_state,audio_started,audio_playing,g_menu_audio_suspended,g_chart_status,g_tutorial_scene_ready,g_tutorial_audio_status,story_assets_ready,g_menu_cache_ready,g_title_anim_status,g_tutorial_gf_uploaded,g_tutorial_bf_uploaded,(int)(g_gftex16.address!=0),g_story_gf_uploaded,g_story_bf_uploaded,g_aspect_169,g_viewport_360,music_clock,audio_submitted,ring_bytes,audio_underruns,audio_fd,g_title_audio_fd,g_tutorial_note_hits,g_tutorial_note_misses,g_tutorial_note_combo,g_tutorial_note_score,g_tutorial_note_feedback,chart_event_cursor);
+   telemetry_state(frame_no-1,ui_state,target_state,selection,story_level,story_diff,transition_frame,transitions,transport_state,audio_started,audio_playing,g_menu_audio_suspended,g_chart_status,g_tutorial_scene_ready,g_tutorial_audio_status,story_assets_ready,g_menu_cache_ready,g_title_anim_status,g_tutorial_gf_uploaded,g_tutorial_bf_uploaded,(int)(g_gftex16.address!=0),g_story_gf_uploaded,g_story_bf_uploaded,g_aspect_169,g_viewport_360,music_clock,audio_submitted,ring_bytes,audio_underruns,audio_fd,g_title_audio_fd,g_tutorial_note_hits,g_tutorial_note_misses,g_tutorial_note_combo,g_tutorial_note_score,g_tutorial_note_feedback,chart_event_cursor,g_band_clip_rects,g_band_clip_lines,g_band_cull_rects);
    telemetry_flush();
    av_trace_capture(frame_no-1,ui_state,target_state,transition_frame,transport_state,audio_fd,music_clock,audio_started,audio_playing,last2,last,chart_event_cursor);draw^=1;
  }

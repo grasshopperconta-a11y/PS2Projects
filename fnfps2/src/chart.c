@@ -191,3 +191,36 @@ int chart_load_song(const char *root, const sr_song_t *song,
     if (n < 0 || (unsigned int)n >= sizeof(path)) return -2;
     return chart_load(path, info);
 }
+
+int chart_load_song_layout(const char *root, const sr_song_t *song,
+                           const char *difficulty, chart_info_t *info,
+                           int *layout_out)
+{
+    char path[160];
+    int layouts, li;
+    if (!root || !song || !difficulty || !info) return -1;
+    layouts = sr_chart_layout_count();
+    /* O layout 0 e o do jogo original e e o que o pendrive usa. Se ele abrir,
+       nada muda. Se nao abrir, os planos sao tentados na ordem: um pendrive
+       cujo usbhdfsd nao consegue abrir a arvore aninhada as vezes abre o
+       arquivo plano, e a diferenca entre o tutorial tocar e nao tocar eh
+       exatamente essa. O layout que funcionou sai em *layout_out para o
+       telemetria poder dizer qual foi. */
+    int first_rc = 0;
+    for (li = 0; li < layouts; li++) {
+        int n = sr_chart_path_at(path, sizeof(path), root, song, difficulty,
+                                 (unsigned int)li);
+        int rc;
+        if (n < 0 || (unsigned int)n >= sizeof(path)) return -2;
+        rc = chart_load(path, info);
+        if (rc == 0) {
+            if (layout_out) *layout_out = li;
+            return 0;
+        }
+        /* Guarda o codigo do layout 0, que e o do jogo original: se nenhum
+           abrir, e esse o motivo que o diagnostico tem que mostrar. */
+        if (li == 0) first_rc = rc;
+    }
+    if (layout_out) *layout_out = -1;
+    return first_rc;
+}

@@ -38,7 +38,9 @@ void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
                      u32 music_clock, u32 audio_submitted, u32 ring_level,
                      u32 underruns, int audio_fd, int title_audio_fd,
                      int note_hits, int note_misses, int note_combo,
-                     int note_score, int note_feedback, int event_cursor);
+                     int note_score, int note_feedback, int event_cursor,
+                     u32 band_clip_rects, u32 band_clip_lines,
+                     u32 band_cull_rects);
 
 /* Um evento de E/S de arquivo, com o resultado. Eh aqui que se ve um asset que
    nao abriu, um tamanho que nao bateu, ou uma leitura que devolveu menos. */

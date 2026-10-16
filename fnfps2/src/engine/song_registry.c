@@ -100,14 +100,54 @@ static int join_path(char *out, unsigned int size, const char *const *parts)
     return (int)total;
 }
 
+/* Numero de layouts diferentes em que o chart de uma musica pode estar no
+ * pendrive. O original (e o pendrive atual) usa a arvore songs/<id>/<d>.chart,
+ * mas o driver de armazenamento USB do PS2 falhou justamente nessa arvore
+ * aninhada no console: o arquivo estava la, no caminho exato, e o open()
+ * devolvia -1. Como nao da para diagnosticar isso pelo log -- o log so mostra
+ * que o open falhou -- a resposta e tentar todos os layouts e REGISTRAR qual
+ * abriu. */
+#define SR_CHART_LAYOUTS 4u
+
+int sr_chart_layout_count(void)
+{
+    return (int)SR_CHART_LAYOUTS;
+}
+
+int sr_chart_path_at(char *out, unsigned int size, const char *root,
+                     const sr_song_t *s, const char *difficulty,
+                     unsigned int layout)
+{
+    const char *parts[8];
+    if (!root || !s || !difficulty) return -1;
+    if (layout >= SR_CHART_LAYOUTS) return -1;
+    /* 0: songs/<id>/<d>.chart   -- o layout do jogo original
+     * 1: songs/<id>-<d>.chart   -- plano, um nivel so
+     * 2: charts/<id>-<d>.chart  -- plano, outra pasta
+     * 3: charts/<id>/<d>.chart  -- arvore, outra pasta
+     * Os dois planos existem porque foi num pendrive com arvore aninhada que o
+     * usbhdfsd do PS2 nao conseguiu abrir o arquivo. */
+    parts[0] = root;
+    parts[1] = (layout == 2u || layout == 3u) ? "/charts/" : "/songs/";
+    parts[2] = s->id;
+    if (layout == 1u || layout == 2u) {
+        parts[3] = "-";
+        parts[4] = difficulty;
+        parts[5] = ".chart";
+        parts[6] = NULL;
+    } else {
+        parts[3] = "/";
+        parts[4] = difficulty;
+        parts[5] = ".chart";
+        parts[6] = NULL;
+    }
+    return join_path(out, size, parts);
+}
+
 int sr_chart_path(char *out, unsigned int size, const char *root,
                   const sr_song_t *s, const char *difficulty)
 {
-    const char *parts[7];
-    if (!root || !s || !difficulty) return -1;
-    parts[0] = root;   parts[1] = "/songs/"; parts[2] = s->id;
-    parts[3] = "/";    parts[4] = difficulty; parts[5] = ".chart"; parts[6] = NULL;
-    return join_path(out, size, parts);
+    return sr_chart_path_at(out, size, root, s, difficulty, 0u);
 }
 
 int sr_instrumental_path(char *out, unsigned int size, const char *root,

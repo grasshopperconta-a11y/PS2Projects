@@ -15,3 +15,17 @@ build/charts-v3/
 *.o
 *.map
 *.elf
+
+# Toolchain extraido pelo with_toolchain.sh / harness_ps2dev.sh: binarios do
+# compilador, muitos megabytes cada, e reproduziveis a partir do tarball. Foram
+# commitados por acidente numa rodada anterior; daqui em diita ficam de fora.
+build/ps2dev-ee-min-fnf/
+build/ps2sdk_host/
+build/paths/
+# Binarios e logs do harness: saida de test/run_tests.sh, regeneraveis.
+build/fnf_harness
+build/fnf_harness_asan
+build/harness*.log
+build/harness_cc.log
+build/harness_assets/
+build/FNF_PS2.ELF

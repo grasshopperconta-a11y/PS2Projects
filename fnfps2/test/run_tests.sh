@@ -184,7 +184,7 @@ else
         echo "$out" | tail -30
         exit 1
     }
-    echo "$out" | grep -E "^(quadros executados|maior pacote|ESTOUROS|escritas na zona|envios DMA acima|uploads de textura|setup_environment|chamadas de desenho|RESULTADO)" | sed 's/^/    /'
+    echo "$out" | grep -E "^(quadros executados|maior pacote|ESTOUROS|escritas na zona|envios DMA acima|uploads de textura|setup_environment|chamadas de desenho|RESULTADO| *auditoria da faixa| *faixa | *ui_state | *PIOR CASO)" | sed 's/^/    /'
     if ! echo "$out" | grep -q "RESULTADO: PASSOU"; then
         echo "  FAIL: o harness nao passou em 1400 quadros"
         echo "$out" | tail -30

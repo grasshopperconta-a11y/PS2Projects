@@ -106,6 +106,15 @@ int chart_load(const char *path, chart_info_t *info);
  */
 int chart_load_song(const char *root, const sr_song_t *song,
                     const char *difficulty, chart_info_t *info);
+
+/* Load a song's chart trying every pendrive layout sr_chart_path_at() knows.
+ * The first layout that opens wins. On success *layout_out (may be NULL)
+ * receives the layout index that worked; on total failure it receives -1 and
+ * the return value is chart_load()'s code for layout 0, the original game's
+ * tree -- so a log line still says why the chart did not load. */
+int chart_load_song_layout(const char *root, const sr_song_t *song,
+                           const char *difficulty, chart_info_t *info,
+                           int *layout_out);
 int chart_note(u32 index, chart_note_t *out);
 const chart_event_t *chart_event(u32 index);
 u32 chart_step_at(u32 sample);
