@@ -15,6 +15,15 @@ void telemetry_frame(u32 frame, u64 begin, u64 after_draw, u64 after_vsync,
    pendente e pode ser chamado a qualquer momento, inclusive a cada quadro. */
 void telemetry_flush(void);
 
+/* Linha crua, escrita e esvaziada na hora: para o que nao pode esperar o
+   flush do quadro (a lista de sprites, os marcos de fase). Se o jogo pendurar,
+   o que jah passou por aqui estah no cartao. */
+void telemetry_raw(const char *text);
+
+/* Marco de fase (boot, troca de estado, travamento). Mesmo descritor unico do
+   resto do log -- nunca um segundo escritor abrindo e truncando o arquivo. */
+void telemetry_phase(const char *phase, int row, int code);
+
 /* O que a tela mostra no canto: resultado do init, quadros registrados,
    eventos pendentes, descartes e despejos. Se o log nao abriu, isso eh a unica
    pista que existe -- por isso precisa estar visivel o tempo todo, e nao

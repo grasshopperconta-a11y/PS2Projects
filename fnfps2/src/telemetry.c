@@ -297,6 +297,33 @@ void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
     write_line(line);
 }
 
+/* Linha crua, escrita NA HORA.
+   O buffer de 8 KB servia para nao custar uma chamada de escrita por linha,
+   mas cobrava caro justamente quando o log importa: se o jogo pendura, tudo
+   que ainda estava no buffer desaparece. Foi assim que a ultima colheita veio
+   com 0 bytes -- o arquivo existia, criado pelo open, e nada dentro. Aqui a
+   linha sai no mesmo instante em que eh gerada, e quem chua decide o ritmo. */
+void telemetry_raw(const char *text)
+{
+    if (!usb_ready || log_fd < 0 || output_error) return;
+    write_text(text);
+    write_text("\n");
+    flush_output();
+}
+
+/* Marco de fase, com o mesmo descritor unico. A versao anterior abria e
+   fechava o arquivo a cada evento, com fsync no meio: dois escritores no
+   mesmo arquivo, um com descritor longo e buffer, outro abrindo e truncando.
+   No pendrive isso nao sobrevive. */
+void telemetry_phase(const char *phase, int row, int code)
+{
+    char line[192];
+    if (!usb_ready) return;
+    snprintf(line, sizeof(line), "P,%s,%d,%d", phase ? phase : "?", row, code);
+    write_line(line);
+    flush_output();
+}
+
 void telemetry_io(const char *op, const char *path, long result, long detail)
 {
     char line[512];
