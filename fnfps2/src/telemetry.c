@@ -147,30 +147,29 @@ int telemetry_init(const char *build_id, const char *elf_path)
     snprintf(build_name, sizeof(build_name), "%s", build_id ? build_id : "unknown");
     snprintf(launch_path, sizeof(launch_path), "%s", elf_path ? elf_path : "unknown");
 
-    /* 1. Tentativa direta: o lancador pode jah ter montado o mass:. Se abriu,
-       nao precisamos carregar modulo nenhum. */
-    for (i = 0; log_paths[i]; ++i) {
-        log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
-        if (log_fd >= 0) { path_index = i; break; }
-    }
+    /* 1. Carrega os modulos ANTES de tocar em qualquer arquivo, e nessa ordem.
+       A tentativa de abrir o mass: antes do fileXioInit() quebrou a build: o
+       jogo nao abria, nao saida som, e nada era escrito -- porque abrir um
+       caminho de rede sem o RPC inicializado eh chamar um subsistema que ainda
+       nao existe. A ordem tem de ser esta, sempre. Falha de modulo nao eh mais
+       fatal, mas a ordem nao eh negociovel. */
+    sbv_patch_enable_lmb();
+    sbv_patch_disable_prefix_check();
+    if (exec_irx(iomanX_irx, size_iomanX_irx) < 0) module_failures++;
+    if (exec_irx(fileXio_irx, size_fileXio_irx) < 0) module_failures++;
+    if (exec_irx(usbd_irx, size_usbd_irx) < 0) module_failures++;
+    if (exec_irx(usbhdfsd_irx, size_usbhdfsd_irx) < 0) module_failures++;
+    modules_loaded = 1;
+    fileXioInit();
 
-    /* 2. Nao abriu: carrega os modulos. Falha de modulo nao eh mais fatal. */
-    if (log_fd < 0) {
-        sbv_patch_enable_lmb();
-        sbv_patch_disable_prefix_check();
-        if (exec_irx(iomanX_irx, size_iomanX_irx) < 0) module_failures++;
-        if (exec_irx(fileXio_irx, size_fileXio_irx) < 0) module_failures++;
-        if (exec_irx(usbd_irx, size_usbd_irx) < 0) module_failures++;
-        if (exec_irx(usbhdfsd_irx, size_usbhdfsd_irx) < 0) module_failures++;
-        modules_loaded = 1;
-        fileXioInit();
-        for (i = 0; log_paths[i] && log_fd < 0; ++i) {
-            int t;
-            for (t = 0; t < 50; ++t) {
-                log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
-                if (log_fd >= 0) { path_index = i; break; }
-                DelayThread(100000);
-            }
+    /* 2. Agora sim tenta os caminhos, com repeticao para o caso de o pendrive
+       ainda estar sendo montado pelo lancador. */
+    for (i = 0; log_paths[i] && log_fd < 0; ++i) {
+        int t;
+        for (t = 0; t < 50; ++t) {
+            log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
+            if (log_fd >= 0) { path_index = i; break; }
+            DelayThread(100000);
         }
     }
 

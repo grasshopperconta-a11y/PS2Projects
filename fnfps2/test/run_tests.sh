@@ -31,6 +31,13 @@ if grep -rnE '\(void\)[a-zA-Z_][a-zA-Z0-9_]*\(' src test \
 fi
 echo "  ok:   no return value is discarded"
 
+# Verificacao contra os headers REAIS do ps2sdk, fora do console. Roda antes de
+# qualquer outra coisa: se um fonte nao compila contra os prototipos verdadeiros,
+# nao adianta testar o resto. Falhar aqui aborta a suite.
+echo "== compilacao contra os headers reais do ps2sdk =="
+./tools/verificar_sdk.sh || exit 1
+echo
+
 echo "== vram_cache + io_fila =="
 $CC $FLAGS test/test_engine.c src/engine/vram_cache.c src/engine/io_fila.c -o /tmp/fnf_test_engine
 /tmp/fnf_test_engine
