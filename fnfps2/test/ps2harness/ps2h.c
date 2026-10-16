@@ -78,6 +78,25 @@ static u32 h_overflows;                /* estouros detectados               */
 static u32 h_guard_hits;               /* escritas na zona de veneno        */
 static u32 h_oversize_sends;           /* DMA acima de QWC_MAX              */
 static u32 h_io_opens, h_io_fail_opens, h_io_reads, h_io_short_reads;
+
+/* Caminhos que nao abriram. Um "5 arquivos nao abriram" sem dizer QUAIS
+   obriga a adivinhar; com a lista, o relatorio aponta o asset que falta. */
+#define H_FAIL_CAP 32
+static char h_fail_path[H_FAIL_CAP][256];
+static unsigned h_fail_n;
+
+static void h_note_fail(const char *p)
+{
+    unsigned i;
+    if (!p) return;
+    for (i = 0; i < h_fail_n; i++)
+        if (!strcmp(h_fail_path[i], p)) return;   /* nao repete o mesmo caminho */
+    if (h_fail_n < H_FAIL_CAP) {
+        snprintf(h_fail_path[h_fail_n], sizeof h_fail_path[0], "%s", p);
+        h_fail_n++;
+    }
+}
+
 static u32 h_audio_submitted, h_audio_available_calls;
 static u32 h_upload_calls, h_upload_bytes;
 static u32 h_draw_filled, h_draw_textured, h_draw_env;
@@ -128,9 +147,12 @@ static void ps2h_report(void)
             "No PS2 qualquer um desses corrompe memoria sem travar.\n",
             h_overflows, h_guard_hits, h_oversize_sends);
     } else if (h_io_fail_opens) {
+        unsigned i;
         fprintf(stderr,
             "\nRESULTADO: FALHOU. %u arquivo(s) nao abriram. Revise a raiz dos\n"
             "assets (PS2H_ROOT) e os caminhos mass:/ do jogo.\n", h_io_fail_opens);
+        for (i = 0; i < h_fail_n; i++)
+            fprintf(stderr, "  nao abriu: %s\n", h_fail_path[i]);
     } else {
         fprintf(stderr,
             "\nRESULTADO: PASSOU. %u quadros, %u pacotes, nenhum estouro,\n"
@@ -533,7 +555,9 @@ int open(const char *path, int flags, ...)
     va_start(ap, flags);
     mode = (mode_t)va_arg(ap, int);
     va_end(ap);
-    { int fd = ps2h_openat(path, flags, mode); if (fd < 0) h_io_fail_opens++; return fd; }
+    { int fd = ps2h_openat(path, flags, mode);
+      if (fd < 0) { h_io_fail_opens++; h_note_fail(path); }
+      return fd; }
 }
 
 int open64(const char *path, int flags, ...)
@@ -541,7 +565,9 @@ int open64(const char *path, int flags, ...)
     mode_t mode = 0; va_list ap;
     h_io_opens++;
     va_start(ap, flags); mode = (mode_t)va_arg(ap, int); va_end(ap);
-    { int fd = ps2h_openat(path, flags, mode); if (fd < 0) h_io_fail_opens++; return fd; }
+    { int fd = ps2h_openat(path, flags, mode);
+      if (fd < 0) { h_io_fail_opens++; h_note_fail(path); }
+      return fd; }
 }
 
 /* Leitura curta nao eh erro por si so: read_exact_path() le em pedacos e a
