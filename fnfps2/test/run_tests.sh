@@ -151,4 +151,74 @@ print(len(d['notes'].get('$diff', [])))")
 done
 echo
 
+echo
+echo "== harness de link + execucao (jogo real + draw real do ps2sdk) =="
+
+HARNESS_BIN=build/fnf_harness
+if [ ! -x "$HARNESS_BIN" ]; then
+    echo "  (construindo o harness...)"
+    sh tools/run_harness.sh 5 >/dev/null 2>&1 || true
+fi
+if [ ! -x "$HARNESS_BIN" ]; then
+    echo "  SKIP: harness nao construido (precisa do clone do ps2sdk)."
+    echo "        Rode 'sh tools/run_harness.sh' para ve-lo em acao."
+else
+    ROOT=build/harness_assets
+
+    # --- positivo: 240 quadros, nenhum estouro permitido -------------------
+    out=$(PS2H_FRAMES=240 PS2H_ROOT="$ROOT" PS2H_WATCHDOG=180 \
+              timeout 240 "$HARNESS_BIN" 2>&1) || {
+        echo "  FAIL: o harness terminou com codigo de erro em 240 quadros"
+        echo "$out" | tail -30
+        exit 1
+    }
+    echo "$out" | grep -E "^(quadros executados|maior pacote|ESTOUROS|escritas na zona|envios DMA acima|uploads de textura|setup_environment|chamadas de desenho|RESULTADO)" | sed 's/^/    /'
+    if echo "$out" | grep -q "RESULTADO: PASSOU"; then
+        echo "  positivo: OK, 240 quadros sem nenhum estouro"
+    else
+        echo "  FAIL: o harness nao passou em 240 quadros"
+        echo "$out" | tail -30
+        exit 1
+    fi
+
+    # --- negativo 1: pacote de 8 quadwords, o estouro TEM de ser pego -----
+    # O harness morre com abort() de proposito, e abort() faz o set -e do
+    # script cair fora. Entao a secao de testes negativos roda com set +e.
+    set +e
+    PS2H_FRAMES=240 PS2H_ROOT="$ROOT" PS2H_QWORDS_CAP=8 PS2H_WATCHDOG=60 \
+        timeout 120 "$HARNESS_BIN" > build/harness_neg1.log 2>&1
+    rc=$?
+    set -e
+    out=$(cat build/harness_neg1.log)
+    if [ $rc -eq 0 ]; then
+        echo "  FAIL: com o pacote em 8 quadwords o harness deveria ter morrido"
+        exit 1
+    fi
+    if ! echo "$out" | grep -q "zona de guarda violada"; then
+        echo "  FAIL: morreu, mas nao acusou a zona de guarda"
+        echo "$out" | head -20
+        exit 1
+    fi
+    echo "  negativo 1 (pacote de 8 qw): OK, detectou a escrita na zona de guarda"
+
+    # --- negativo 2: DMA acima de QWC_MAX, tambem TEM de ser pego --------
+    set +e
+    PS2H_FRAMES=240 PS2H_ROOT="$ROOT" PS2H_FORCE_QWC=70000 PS2H_WATCHDOG=60 \
+        timeout 120 "$HARNESS_BIN" > build/harness_neg2.log 2>&1
+    rc=$?
+    set -e
+    out=$(cat build/harness_neg2.log)
+    if [ $rc -eq 0 ]; then
+        echo "  FAIL: com 70000 quadwords de DMA o harness deveria ter morrido"
+        exit 1
+    fi
+    if ! echo "$out" | grep -q "DMA acima de QWC_MAX"; then
+        echo "  FAIL: morreu, mas nao acusou o QWC_MAX"
+        echo "$out" | head -20
+        exit 1
+    fi
+    echo "  negativo 2 (DMA com 70000 qw): OK, detectou o excesso sobre QWC_MAX"
+fi
+
+echo
 echo "ALL SUITES PASSED"

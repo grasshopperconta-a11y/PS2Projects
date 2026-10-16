@@ -9,3 +9,10 @@ build/charts-v3/
 # Written by tools/empacotar.sh at package time, never by hand: it names the
 # revision inside the tarball, so it must move with the commit, not sit in it.
 REVISAO.txt
+
+# Logs que o proprio jogo escreve em assets/ quando roda (no console e no
+# harness). Sao saida de execucao, nunca entrada: commitar um deles faria o
+# repositorio mentir sobre o estado do jogo.
+FNF_COLHEITA.txt
+FNF_ESTADO.txt
+FNF_SCREEN_*.rgba.txt
