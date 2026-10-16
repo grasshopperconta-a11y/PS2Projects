@@ -324,7 +324,8 @@ static float g_dl_gs[DL_MAX*4];
 /* Cabecalho da lista, uma vez so. */
 static int g_dl_hdr=0;
 static void dl_header(void){
-  if(g_dl_hdr)return;g_dl_hdr=1;
+  if(g_dl_hdr){return;}
+  g_dl_hdr=1;
   telemetry_raw("# colunas sprite: D,quadro,i,estado,x,y,w,h,u,v,uw,vh,alfa,"
                 "vy0,vy1,vy_span,gsx0,gsy0,gsx1,gsy1  (geometria JA recortada)");
 }
@@ -334,11 +335,11 @@ static void dl_header(void){
    na hora um sprite que foi esticado, e comparando vy0/vy1 com a faixa
    publicada da para ver um que saiu dela. */
 static void dl_dump(u32 frame){
-  char b[640];int i,k;
+  char b[640];int i;
   dl_header();
   for(i=0;i<g_dl_n;i++){
     dl_item_t*d=&g_dl[i];
-    k=snprintf(b,sizeof(b),
+    snprintf(b,sizeof(b),
       "D,%u,%d,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
       frame,i,(unsigned)d->estado,d->x,d->y,d->w,d->h,d->u,d->v,d->uw,d->vh,
       (unsigned)d->alfa,d->vy0,d->vy1,d->vy1-d->vy0,
@@ -612,11 +613,21 @@ static void band_counters_reset(void){g_band_clip_rects=0;g_band_clip_lines=0;g_
    y0..y1 e v0..v1 sao o retangulo fisico e o trecho de textura; saida pelos
    ponteiros. Devolve 0 quando nao ha nada visivel. */
 static int band_clip_phys(float y0,float y1,float v0,float v1,float*yy0,float*yy1,float*vv0,float*vv1){
+ float oy0=y0,ov0=v0,ov1=v1;
  float top=(float)SCISSOR_TOPO,base=(float)SCISSOR_BASE,h=y1-y0;
  if(h<=0.0f)return 0;
  if(y1<=top||y0>=base)return 0;
- if(y0<top){float f=(top-y0)/h;v0+=(v1-v0)*f;y0=top;}
- if(y1>base){float f=(base-y0)/h;y1=y0+h*f;v1=v0+(v1-v0)*f;}
+ /* AS DUAS FRACOES SAO MEDIDAS A PARTIR DO y0 ORIGINAL.
+    A versao anterior media a segunda a partir do y0 JA cortado pelo primeiro
+    if. Quando o sprite atravessa a faixa DOS DOIS LADOS -- que eh o caso do
+    fundo do menu, 406,9 linhas fisicas contra uma faixa de 335 -- a fragao de
+    baixo saida pequena demais, o trecho de textura vinha estreito e o sprite
+    saia ESTICADO na vertical. Foi exatamente o que o teste no console viu:
+    "o background se estica para cima e para baixo em vez de subir e descer".
+    A conta do log mostra: h=335.00 com vh=205.56, escala 1.6297, quando a
+    correta eh 406.893/256 = 1.5892 -- 2,55% de esticamento. */
+ if(y0<top){float f=(top-oy0)/h;y0=top;v0=ov0+(ov1-ov0)*f;}
+ if(y1>base){float f=(base-oy0)/h;if(f>1.0f)f=1.0f;y1=oy0+h*f;v1=ov0+(ov1-ov0)*f;}
  if(y1<=y0)return 0;
  *yy0=y0;*yy1=y1;*vv0=v0;*vv1=v1;
  return 1;
@@ -1276,7 +1287,8 @@ int main(int argc,char**argv){framebuffer_t fb[2];zbuffer_t z;texbuffer_t tex,te
    escreveu o cabecalho; reabrir com O_TRUNC apagava esse cabecalho e deixava
    um segundo escritor brigando pelo mesmo arquivo. O cabecalho do log unico
    sai do proprio telemetry_init. */
-if(g_capture_raw_fd>=0)fsync(g_capture_raw_fd);{int lm=load_metadata();capture_status("META_DONE",-1,lm);if(lm<0)SleepThread();}{int ip=init_pad();capture_status("PAD_DONE",-1,ip);if(ip<0)SleepThread();}g_menu_pixels=g_pixels;capture_status("CACHE_ALLOC_BEGIN",-1,0);g_menu_compressed=memalign(128,PRELOAD_RLE_BYTES);g_menu_sfx_pixels=memalign(128,281088);if(!g_menu_compressed||!g_menu_sfx_pixels){capture_status("CACHE_ALLOC_FAIL",-1,-1);SleepThread();}capture_status("CACHE_READ_BEGIN",-1,0);if(read_exact_path("mass:/FNFPS2/assets/menu_cache.rle",g_menu_compressed,PRELOAD_RLE_BYTES)<0){capture_status("CACHE_RLE_FAIL",-1,-2);SleepThread();}telemetry_event("rle_size",(int)PRELOAD_RLE_BYTES,(int)MENU_RLE_BYTES);telemetry_event("rle_head",(int)(((u32)g_menu_compressed[0]<<24)|((u32)g_menu_compressed[1]<<16)|((u32)g_menu_compressed[2]<<8)|(u32)g_menu_compressed[3]),(int)(((u32)g_menu_compressed[MENU_RLE_BYTES]<<24)|((u32)g_menu_compressed[MENU_RLE_BYTES+1]<<16)|((u32)g_menu_compressed[MENU_RLE_BYTES+2]<<8)|(u32)g_menu_compressed[MENU_RLE_BYTES+3]));{int rfd=open("mass:/FNFPS2/assets/menu_cache.rle",O_RDONLY);if(rfd>=0){unsigned char rb[16];int rn=read(rfd,rb,16);close(rfd);telemetry_event("rle_reread",rn,rn>=4?(int)(((u32)rb[0]<<24)|((u32)rb[1]<<16)|((u32)rb[2]<<8)|(u32)rb[3]):-999);}else telemetry_event("rle_reread",-1,-998);}if(read_exact_path("mass:/FNFPS2/assets/menu_sfx.pcm",g_menu_sfx_pixels,281088)<0){capture_status("CACHE_SFX_FAIL",-1,-3);SleepThread();}capture_status("AUDIO_INIT_BEGIN",-1,0);audio_ok=(audio_init()==0);g_audio_ready=audio_ok;capture_status("AUDIO_INIT_DONE",-1,audio_ok?0:-1);if(!audio_ok)audio_playing=0;else audio_playing=0;transport_state=0;clock_hold=1;
+if(g_capture_raw_fd>=0){fsync(g_capture_raw_fd);}
+{int lm=load_metadata();capture_status("META_DONE",-1,lm);if(lm<0)SleepThread();}{int ip=init_pad();capture_status("PAD_DONE",-1,ip);if(ip<0)SleepThread();}g_menu_pixels=g_pixels;capture_status("CACHE_ALLOC_BEGIN",-1,0);g_menu_compressed=memalign(128,PRELOAD_RLE_BYTES);g_menu_sfx_pixels=memalign(128,281088);if(!g_menu_compressed||!g_menu_sfx_pixels){capture_status("CACHE_ALLOC_FAIL",-1,-1);SleepThread();}capture_status("CACHE_READ_BEGIN",-1,0);if(read_exact_path("mass:/FNFPS2/assets/menu_cache.rle",g_menu_compressed,PRELOAD_RLE_BYTES)<0){capture_status("CACHE_RLE_FAIL",-1,-2);SleepThread();}telemetry_event("rle_size",(int)PRELOAD_RLE_BYTES,(int)MENU_RLE_BYTES);telemetry_event("rle_head",(int)(((u32)g_menu_compressed[0]<<24)|((u32)g_menu_compressed[1]<<16)|((u32)g_menu_compressed[2]<<8)|(u32)g_menu_compressed[3]),(int)(((u32)g_menu_compressed[MENU_RLE_BYTES]<<24)|((u32)g_menu_compressed[MENU_RLE_BYTES+1]<<16)|((u32)g_menu_compressed[MENU_RLE_BYTES+2]<<8)|(u32)g_menu_compressed[MENU_RLE_BYTES+3]));{int rfd=open("mass:/FNFPS2/assets/menu_cache.rle",O_RDONLY);if(rfd>=0){unsigned char rb[16];int rn=read(rfd,rb,16);close(rfd);telemetry_event("rle_reread",rn,rn>=4?(int)(((u32)rb[0]<<24)|((u32)rb[1]<<16)|((u32)rb[2]<<8)|(u32)rb[3]):-999);}else telemetry_event("rle_reread",-1,-998);}if(read_exact_path("mass:/FNFPS2/assets/menu_sfx.pcm",g_menu_sfx_pixels,281088)<0){capture_status("CACHE_SFX_FAIL",-1,-3);SleepThread();}capture_status("AUDIO_INIT_BEGIN",-1,0);audio_ok=(audio_init()==0);g_audio_ready=audio_ok;capture_status("AUDIO_INIT_DONE",-1,audio_ok?0:-1);if(!audio_ok)audio_playing=0;else audio_playing=0;transport_state=0;clock_hold=1;
  dma_channel_initialize(DMA_CHANNEL_GIF,NULL,0);dma_channel_fast_waits(DMA_CHANNEL_GIF);graph_vram_clear();
  fb[0].width=SCREEN_W;fb[0].height=SCREEN_H;fb[0].psm=GS_PSM_32;fb[0].mask=0;fb[0].address=graph_vram_allocate(SCREEN_W,SCREEN_H,GS_PSM_32,GRAPH_ALIGN_PAGE);fb[1]=fb[0];fb[1].address=graph_vram_allocate(SCREEN_W,SCREEN_H,GS_PSM_32,GRAPH_ALIGN_PAGE);
  z.enable=DRAW_DISABLE;z.address=0;z.mask=0;z.zsm=0;z.method=0;
