@@ -1,0 +1,24 @@
+PS2DEV EE mínimo para compilar o port FNF PS2.
+
+Incluído:
+- toolchain EE;
+- GCC, binutils, assembler e linker R5900;
+- headers common e EE do PS2SDK;
+- bibliotecas EE pré-compiladas;
+- startup e linkfile;
+- infraestrutura Makefile necessária;
+- utilitários pequenos de PS2DEV.
+
+Excluído intencionalmente:
+- toolchain IOP;
+- toolchain DVP;
+- gsKit;
+- fontes completas do PS2SDK;
+- exemplos;
+- documentação;
+- testes;
+- componentes de rede, DVD/CD, HDD e outros projetos não necessários
+  para o Makefile atual.
+
+A validade do pacote é comprovada compilando e vinculando o FIX28
+em um ambiente isolado que aponta exclusivamente para este pacote.

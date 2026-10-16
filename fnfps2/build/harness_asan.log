@@ -1,0 +1,24 @@
+harness: 1400 quadros, raiz de assets 'build/harness_assets', pacote com 64 quadwords de guarda
+harness: roteiro de botoes (12 eventos): 200:4000 420:4000 600:4000 700:2000 760:4000 860:2000 920:4000 1020:2000 1080:4000 1180:2000 1240:4000 1340:2000
+
+harness: o jogo chegou ao fim (1401 quadros) e estacionou no
+SleepThread() de shutdown -- comportamento normal no PS2.
+
+================ RELATORIO DO HARNESS ================
+quadros executados ............ 1401
+pacotes criados / libertados .. 3777 / 3776
+envios DMA (normal/chain) ..... 4038 / 1950
+maior pacote construido ....... 616 quadwords (limite pedido 4096)
+ESTOUROS DE PACOTE ............ 0
+escritas na zona de guarda .... 0
+envios DMA acima de QWC_MAX ... 0
+uploads de textura ........... 1950 chamadas, 260114340 bytes
+setup_environment ............ 2212
+chamadas de desenho .......... 86486  (preenchidos 2692, texturizados 83794)
+E/S: opens/falhas/leituras ... 162 / 0 / 5037 (leituras curtas 0)
+botoes do roteiro executados . 12 de 12
+audio: amostras submetidas ... 35819520
+======================================================
+
+RESULTADO: PASSOU. 1401 quadros, 3777 pacotes, nenhum estouro,
+nenhuma escrita fora do limite, todo asset abriu.

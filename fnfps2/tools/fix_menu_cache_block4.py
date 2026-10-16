@@ -23,6 +23,86 @@ FW, FH = 384, 192
 CELL_W, CELL_H = 24, 32
 GLYPHS = 96
 
+# A fonte do menu story NAO eh a font.rgba (a fonte principal do jogo). Eh a
+# fonte VCR: uma mascara de alfa de 160x120 que mora como blob RLE DENTRO de
+# menu_sfx.pcm, no offset 241920+22656. story_font_alpha_decode() escreve
+# RGB=(255,255,255) e o alfa decodificado, com passo de 4 bytes por pixel.
+# A grade eh 16x6 de celulas 10x20 (story_vcr_line, src/main.c:781), com
+# advance de 9,375 e cada glifo desenhado com 10 de largura por 20 de altura.
+# Foi assim que a 0.2.105 entregou os titulos com a fonte ERRADA: eu tinha
+# renderizado com a font.rgba.
+VCR_W, VCR_H = 160, 120
+VCR_CELL_W, VCR_CELL_H = 10, 20
+VCR_ADV = 9.375
+SFX_ALPHA_OFF = 241_920 + 22_656      # 264.576
+SFX_ALPHA_LEN = 7_672
+
+
+def story_font_alpha_decode(blob, pixels):
+    """Replica exata de story_font_alpha_decode (src/main.c:777)."""
+    si = 0
+    di = 0
+    out = bytearray()
+    n = len(blob)
+    while si < n and di < pixels:
+        c = blob[si]
+        si += 1
+        if c < 128:
+            k = c + 1
+            if si + k > n or di + k > pixels:
+                raise SystemExit("vcr: literal estoura o blob em %d" % si)
+            for _ in range(k):
+                out += bytes((255, 255, 255, blob[si]))
+                si += 1
+                di += 1
+        elif c > 128:
+            k = 257 - c
+            if si >= n:
+                raise SystemExit("vcr: repeat estoura o blob em %d" % si)
+            a = blob[si]
+            si += 1
+            if di + k > pixels:
+                raise SystemExit("vcr: repeat estoura os pixels em %d" % si)
+            for _ in range(k):
+                out += bytes((255, 255, 255, a))
+                di += 1
+        else:
+            raise SystemExit("vcr: controle 128 (invalido) no offset %d" % (si - 1))
+    if si != SFX_ALPHA_LEN or di != pixels:
+        raise SystemExit("vcr: consumiu %d de %d bytes e produziu %d de %d px"
+                         % (si, SFX_ALPHA_LEN, di, pixels))
+    return bytes(out)
+
+
+def load_font(assets):
+    """Devolve (rgba_da_fonte_principal, larguras, mascara_alfa_da_vcr)."""
+    rgba = open(os.path.join(assets, "font.rgba"), "rb").read()
+    widths = open(os.path.join(assets, "font.widths"), "rb").read()
+    if len(rgba) != FW * FH * 4:
+        raise SystemExit("font.rgba tem %d bytes, esperado %d" % (len(rgba), FW * FH * 4))
+    if len(widths) != GLYPHS:
+        raise SystemExit("font.widths tem %d bytes, esperado %d" % (len(widths), GLYPHS))
+    sfx = open(os.path.join(assets, "menu_sfx.pcm"), "rb").read()
+    if len(sfx) < SFX_ALPHA_OFF + SFX_ALPHA_LEN:
+        raise SystemExit("menu_sfx.pcm nao tem o blob da fonte VCR no offset %d"
+                         % SFX_ALPHA_OFF)
+    vcr = story_font_alpha_decode(sfx[SFX_ALPHA_OFF:SFX_ALPHA_OFF + SFX_ALPHA_LEN],
+                                  VCR_W * VCR_H)
+    return rgba, widths, vcr
+
+
+def glyph_alpha(vcr, n):
+    """Matriz VCR_CELL_H x VCR_CELL_W com o alfa do glifo n (0..95) da VCR."""
+    cx = (n % 16) * VCR_CELL_W
+    cy = (n // 16) * VCR_CELL_H
+    rows = []
+    for r in range(VCR_CELL_H):
+        row = []
+        for c in range(VCR_CELL_W):
+            row.append(vcr[((cy + r) * VCR_W + cx + c) * 4 + 3])
+        rows.append(row)
+    return rows
+
 # src/story_titles_generated.h
 STORY_TITLES = [
     (0, 222, 41), (36408, 180, 44), (68088, 180, 44), (99768, 179, 44),
@@ -37,48 +117,26 @@ STORY_NAMES = [
 ]
 
 
-def load_font(assets):
-    rgba = open(os.path.join(assets, "font.rgba"), "rb").read()
-    widths = open(os.path.join(assets, "font.widths"), "rb").read()
-    if len(rgba) != FW * FH * 4:
-        raise SystemExit("font.rgba tem %d bytes, esperado %d" % (len(rgba), FW * FH * 4))
-    if len(widths) != GLYPHS:
-        raise SystemExit("font.widths tem %d bytes, esperado %d" % (len(widths), GLYPHS))
-    return rgba, widths
+def render_text(vcr, text, w, h):
+    """Texto branco (RGB 255) com o alfa da VCR, escalado para caber em w x h.
 
-
-def glyph_alpha(font, n):
-    """Devolve uma matriz CELL_H x CELL_W com o alpha do glifo n (0..95)."""
-    cx = (n % 16) * CELL_W
-    cy = (n // 16) * CELL_H
-    rows = []
-    for r in range(CELL_H):
-        row = []
-        for c in range(CELL_W):
-            row.append(font[((cy + r) * FW + cx + c) * 4 + 3])
-        rows.append(row)
-    return rows
-
-
-def render_text(font, widths, text, w, h):
-    """Renderiza text centralizado num canvas w x h RGBA32, branco com o alpha
-    do glifo. A escala escolhe o maior tamanho que caberia na largura."""
-    if not text:
-        return bytearray(w * h * 4)
-    # largura natural na escala 1 (o jogo avanca advance*0.5 por glifo)
-    natural = sum(widths[ord(ch) - 32] for ch in text if 32 <= ord(ch) <= 127) * 0.5
-    if natural <= 0:
-        return bytearray(w * h * 4)
-    # cabe pela largura e pela altura; o menor dos dois ganha
-    scale = min((w * 0.90) / natural, (h * 0.70) / 16.0)
-    if scale <= 0:
-        return bytearray(w * h * 4)
-    draw_w = 12 * scale
-    draw_h = 16 * scale
-    total = natural * scale
-    x = (w - total) * 0.5
-    y = (h - draw_h) * 0.5
+    Geometria exata do jogo (story_vcr_line, src/main.c:781): cada glifo ocupa
+    VCR_CELL_W x VCR_CELL_H na celula e eh desenhado com essa mesma largura,
+    avancando VCR_ADV por glifo. O alfa da textura passa por
+    (a*128+127)/255, o mesmo contrato de tutorial_vcr_restore.
+    """
     out = bytearray(w * h * 4)
+    count = len(text)
+    if count == 0:
+        return out
+    nat_w = VCR_ADV * count
+    nat_h = float(VCR_CELL_H)
+    scale = min(w * 0.92 / nat_w, h * 0.80 / nat_h)
+    if scale <= 0:
+        return out
+    total = nat_w * scale
+    pen = (w - total) * 0.5
+    top = (h - VCR_CELL_H * scale) * 0.5
     cache = {}
 
     def px(cx, cy, alpha):
@@ -93,23 +151,24 @@ def render_text(font, widths, text, w, h):
         n = ord(ch) - 32
         if not (0 <= n < GLYPHS):
             n = ord('?') - 32
-        adv = widths[n] * 0.5 * scale
         if n not in cache:
-            cache[n] = glyph_alpha(font, n)
+            cache[n] = glyph_alpha(vcr, n)
         g = cache[n]
-        # mapeia o cell 24x32 para o retangulo draw_w x draw_h
-        for gy in range(CELL_H):
-            fy = y + gy * (draw_h / CELL_H)
+        gx0 = pen
+        pen += VCR_ADV * scale
+        # uma coluna da celula por vez, para o passo horizontal ser o mesmo do
+        # jogo: o glifo inteiro (10 px) eh mapeado em 10*scale.
+        for gy in range(VCR_CELL_H):
+            fy = top + gy * scale
             iy = int(fy)
-            for gx in range(CELL_W):
+            for gx in range(VCR_CELL_W):
                 a = g[gy][gx]
                 if a == 0:
                     continue
-                fx = x + gx * (draw_w / CELL_W)
+                fx = gx0 + gx * scale
                 ix = int(fx)
                 px(ix, iy, a)
                 px(ix + 1, iy, a)
-        x += adv
     return out
 
 
@@ -282,7 +341,7 @@ def main():
     src = open(os.path.join(assets, "menu_cache.rle"), "rb").read()
     print("menu_cache.rle original: %d bytes" % len(src))
 
-    font, widths = load_font(assets)
+    _main, _widths, vcr = load_font(assets)
 
     # confirma que os 3 primeiros blocos do arquivo real estao bons
     for off, size, raw, name in ((0, MENU_RLE, 2_961_848, "menu"),
@@ -297,7 +356,7 @@ def main():
     # monta o atlas dos 9 titulos com a fonte real
     atlas = bytearray(ST_TITLES_RAW)
     for (off, w, h), name in zip(STORY_TITLES, STORY_NAMES):
-        img = render_text(font, widths, name, w, h)
+        img = render_text(vcr, name, w, h)
         if len(img) != w * h * 4:
             raise SystemExit("render de %s deu %d bytes" % (name, len(img)))
         atlas[off:off + len(img)] = img

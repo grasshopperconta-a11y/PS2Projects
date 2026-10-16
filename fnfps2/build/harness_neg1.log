@@ -1,0 +1,44 @@
+harness: 1400 quadros, raiz de assets 'build/harness_assets', pacote com 64 quadwords de guarda
+harness: ATENCAO, teto artificial de 8 quadwords por pacote (teste negativo do detector)
+
+#### ESTOURO DETECTADO PELO HARNESS ####
+  o que ....... zona de guarda violada
+  detalhe ..... algo escreveu alem do limite do pacote
+  quadro ...... 0
+  tinha ....... 8 quadwords
+  precisou .... 9 quadwords
+  limite ...... 8 quadwords
+  ----------------------------------------
+  O pacote foi criado com packet_init(8) e o codigo de desenho
+  escreveu 9 quadwords. No PS2 isso sobrescreve a memoria seguinte
+  ao pacote; o sintoma apareceria longe da causa. Abortando aqui.
+
+build/fnf_harness(+0x15797)[0x56142c0ea797]
+build/fnf_harness(+0x15918)[0x56142c0ea918]
+build/fnf_harness(+0x16096)[0x56142c0eb096]
+build/fnf_harness(+0x84f2)[0x56142c0dd4f2]
+build/fnf_harness(+0xb5e5)[0x56142c0e05e5]
+/lib/x86_64-linux-gnu/libc.so.6(+0x2724a)[0x7f0ec50d824a]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x85)[0x7f0ec50d8305]
+build/fnf_harness(+0x4321)[0x56142c0d9321]
+
+================ RELATORIO DO HARNESS ================
+quadros executados ............ 0
+pacotes criados / libertados .. 8 / 6
+envios DMA (normal/chain) ..... 6 / 1
+maior pacote construido ....... 8 quadwords (limite pedido 8)
+ESTOUROS DE PACOTE ............ 0
+escritas na zona de guarda .... 1
+envios DMA acima de QWC_MAX ... 0
+uploads de textura ........... 1 chamadas, 294912 bytes
+setup_environment ............ 0
+chamadas de desenho .......... 0  (preenchidos 0, texturizados 0)
+E/S: opens/falhas/leituras ... 18 / 0 / 6 (leituras curtas 0)
+botoes do roteiro executados . 0 de 0
+audio: amostras submetidas ... 0
+======================================================
+
+RESULTADO: FALHOU. O harness detectou 0 estouro(s) de pacote,
+1 escrita(s) na zona de guarda e 0 envio(s) DMA acima do limite.
+No PS2 qualquer um desses corrompe memoria sem travar.
+Aborted
