@@ -15,6 +15,13 @@ void telemetry_frame(u32 frame, u64 begin, u64 after_draw, u64 after_vsync,
    pendente e pode ser chamado a qualquer momento, inclusive a cada quadro. */
 void telemetry_flush(void);
 
+/* O que a tela mostra no canto: resultado do init, quadros registrados,
+   eventos pendentes, descartes e despejos. Se o log nao abriu, isso eh a unica
+   pista que existe -- por isso precisa estar visivel o tempo todo, e nao
+   enterrada num arquivo que talvez nao tenha sido criado. */
+void telemetry_status(int *result, unsigned int *frames, unsigned int *events,
+                      unsigned int *drops, unsigned int *flushes);
+
 /* Uma linha por quadro com o estado completo da maquina de estados. Os campos
    sao inteiros de proposito: o log precisa ser comparavel por diff, e ponto
    flutuante no formato de texto introduce ruido de ultima casa. */

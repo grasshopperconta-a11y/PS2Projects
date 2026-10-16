@@ -71,7 +71,9 @@ static unsigned int output_used;
 static unsigned int output_checksum;
 static int output_error;
 static int log_fd = -1;
+static int init_result;
 static u32 flush_count;
+static u32 frames_logged;
 
 static void flush_output(void)
 {
@@ -111,50 +113,111 @@ static void write_line(const char *text)
     if (!output_error) write_text("\n");
 }
 
+static const char *const log_paths[] = {
+    "mass:/FNFPS2/FNF_COLHEITA.txt",
+    "mass:/FNF_COLHEITA.txt",
+    "host:/FNF_COLHEITA.txt",
+    "mc0:/FNF_COLHEITA.txt",
+    0
+};
+
+/* Por que o log vinha vazio: o init carregava iomanX, fileXio, usbd e usbhdfsd
+   e DESISTIA no primeiro que falhasse. Se o jogo eh lancado por um gerenciador
+   (uLE, OPL, ESR) que ja montou o pendrive, o segundo carregamento do usbd
+   falha, o init retorna -3, e o arquivo nunca eh aberto -- enquanto o mass:
+   continua funcionando normalmente, porque foi o lancador que o montou. O
+   resultado era o pior possivel: jogo rodando, assets carregando, log ausente
+   e nenhuma pista do motivo. Agora ele tenta abrir o arquivo DIRETO primeiro,
+   so carrega modulo se precisar, nao desiste por falha de modulo, e registra
+   o resultado de cada etapa. */
 int telemetry_init(const char *build_id, const char *elf_path)
 {
     int i;
+    int modules_loaded = 0;
+    int module_failures = 0;
+    int path_index = -1;
+
     record_count = 0;
     render_event_count = 0;
     render_events_dropped = 0;
     flush_count = 0;
     output_used = 0;
     output_error = 0;
+    init_result = 0;
     snprintf(build_name, sizeof(build_name), "%s", build_id ? build_id : "unknown");
     snprintf(launch_path, sizeof(launch_path), "%s", elf_path ? elf_path : "unknown");
 
-    sbv_patch_enable_lmb();
-    sbv_patch_disable_prefix_check();
-    if (exec_irx(iomanX_irx, size_iomanX_irx) < 0) return -1;
-    if (exec_irx(fileXio_irx, size_fileXio_irx) < 0) return -2;
-    if (exec_irx(usbd_irx, size_usbd_irx) < 0) return -3;
-    if (exec_irx(usbhdfsd_irx, size_usbhdfsd_irx) < 0) return -4;
-    fileXioInit();
-
-    for (i = 0; i < 50; ++i) {
-        log_fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0666);
-        if (log_fd >= 0) {
-            char line[512];
-            usb_ready = 1;
-            /* O cabecalho sai no init, nao no fim: se o port travar no meio, o
-               arquivo jah comeca dizendo que build eh este e em que modo. */
-            output_checksum = 2166136261u;
-            snprintf(line, sizeof(line), "# FNF PS2 TELEMETRIA CONTINUA build=%.63s", build_name);
-            write_line(line);
-            snprintf(line, sizeof(line), "# elf=%.255s", launch_path);
-            write_line(line);
-            write_line("# physical=640x448 logical=1280x720 region=NTSC framebuffer=PSMCT32 buffering=double");
-            write_line("# scope=title,main_menu,story_menu,tutorial audio=audsrv pcm=s16le stereo=48000Hz");
-            write_line("# formato: uma linha por evento; tudo em texto, ordenado por emissao");
-            write_line("# colunas estado: quadro,ui,target,sel,nivel,diff,trans_frame,trans,transport,audio_on,audio_tocando,menu_susp,chart,tut_pronta,tut_audio,story_assets,menu_cache,title_anim,gf_up,bf_up,gf16_up,story_gf_up,story_bf_up,aspect169,vp360,music_clock,enviado,ring,underruns,fd_audio,fd_title,acertos,erros,combo,pontos,feedback,cursor_eventos");
-            write_line("# colunas quadro: quadro,begin,draw,vsync,draw_ticks,espera_ticks,total,fps,pressed,anim,anim_frame,asset_frame,quads,qwords,ui,trans,ouvido,fila_audio,ring,underruns");
-            flush_output();
-            fsync(log_fd);
-            return 0;
-        }
-        DelayThread(100000);
+    /* 1. Tentativa direta: o lancador pode jah ter montado o mass:. Se abriu,
+       nao precisamos carregar modulo nenhum. */
+    for (i = 0; log_paths[i]; ++i) {
+        log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
+        if (log_fd >= 0) { path_index = i; break; }
     }
-    return -5;
+
+    /* 2. Nao abriu: carrega os modulos. Falha de modulo nao eh mais fatal. */
+    if (log_fd < 0) {
+        sbv_patch_enable_lmb();
+        sbv_patch_disable_prefix_check();
+        if (exec_irx(iomanX_irx, size_iomanX_irx) < 0) module_failures++;
+        if (exec_irx(fileXio_irx, size_fileXio_irx) < 0) module_failures++;
+        if (exec_irx(usbd_irx, size_usbd_irx) < 0) module_failures++;
+        if (exec_irx(usbhdfsd_irx, size_usbhdfsd_irx) < 0) module_failures++;
+        modules_loaded = 1;
+        fileXioInit();
+        for (i = 0; log_paths[i] && log_fd < 0; ++i) {
+            int t;
+            for (t = 0; t < 50; ++t) {
+                log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
+                if (log_fd >= 0) { path_index = i; break; }
+                DelayThread(100000);
+            }
+        }
+    }
+
+    if (log_fd < 0) {
+        /* Nao abriu em lugar nenhum. O numero volta codificado para a tela
+           poder mostrar: -100 menos a quantidade de modulos que falharam. */
+        init_result = -100 - module_failures;
+        return init_result;
+    }
+
+    usb_ready = 1;
+    {
+        char line[512];
+        /* O cabecalho sai no init, nao no fim: se o port travar no meio, o
+           arquivo jah comeca dizendo que build eh este e em que modo. */
+        output_checksum = 2166136261u;
+        snprintf(line, sizeof(line), "# FNF PS2 TELEMETRIA CONTINUA build=%.63s", build_name);
+        write_line(line);
+        snprintf(line, sizeof(line), "# elf=%.255s", launch_path);
+        write_line(line);
+        write_line("# physical=640x448 logical=1280x720 region=NTSC framebuffer=PSMCT32 buffering=double");
+        write_line("# scope=title,main_menu,story_menu,tutorial audio=audsrv pcm=s16le stereo=48000Hz");
+        write_line("# formato: uma linha por evento; tudo em texto, ordenado por emissao");
+        write_line("# colunas estado: quadro,ui,target,sel,nivel,diff,trans_frame,trans,transport,audio_on,audio_tocando,menu_susp,chart,tut_pronta,tut_audio,story_assets,menu_cache,title_anim,gf_up,bf_up,gf16_up,story_gf_up,story_bf_up,aspect169,vp360,music_clock,enviado,ring,underruns,fd_audio,fd_title,acertos,erros,combo,pontos,feedback,cursor_eventos");
+        write_line("# colunas quadro: quadro,begin,draw,vsync,draw_ticks,espera_ticks,total,fps,pressed,anim,anim_frame,asset_frame,quads,qwords,ui,trans,ouvido,fila_audio,ring,underruns");
+        /* Resultado da abertura: diz se o lancador jah tinha montado o mass:,
+           quantos modulos falharam, e em qual caminho o arquivo foi parar. */
+        snprintf(line, sizeof(line), "# init ok caminho=%d modulos_carregados=%d falhas_modulo=%d aberto_direto=%d",
+                 path_index, modules_loaded, module_failures, modules_loaded ? 0 : 1);
+        write_line(line);
+        flush_output();
+        fsync(log_fd);
+    }
+    return 0;
+}
+
+/* O que a tela mostra no canto. Se o log nao abriu, isso eh a UNICA pista que
+   existe -- e por isso ele precisa estar visivel o tempo todo, nao enterrado
+   num arquivo que talvez nao tenha sido criado. */
+void telemetry_status(int *result, unsigned int *frames, unsigned int *events,
+                      unsigned int *drops, unsigned int *flushes)
+{
+    if (result) *result = init_result;
+    if (frames) *frames = frames_logged;
+    if (events) *events = render_event_count;
+    if (drops) *drops = render_events_dropped;
+    if (flushes) *flushes = flush_count;
 }
 
 void telemetry_event(const char *name, int a, int b)
@@ -214,6 +277,7 @@ void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
 {
     char line[512];
     if (!usb_ready) return;
+    frames_logged++;
     snprintf(line, sizeof(line),
         "S,%u,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u,%u,%d,%d,%d,%d,%d,%d,%d,%d",
         frame, ui_state, target_state, selection, story_level, story_diff,
