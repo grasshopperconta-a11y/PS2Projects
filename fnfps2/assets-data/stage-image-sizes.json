@@ -1,0 +1,601 @@
+{
+  "_comment": "Real pixel dimensions of every stage background image, taken from the Drive mirror's imageMediaMetadata (no download needed). Keyed by the stage JSON's assetPath. `null` means the image was not found in the mirror, or Drive returned no dimensions for it; the VRAM report counts those as gaps rather than guessing. The PS2 uploads every texture as 32-bit PSMCT32, so the VRAM cost is w*h*4 regardless of the PNG's channel count.",
+  "images": {
+    "back-stools": {
+      "w": 4056,
+      "h": 311
+    },
+    "back-tables": {
+      "w": 4953,
+      "h": 426
+    },
+    "bg": {
+      "w": 5023,
+      "h": 1512
+    },
+    "bricksGround": {
+      "w": 382,
+      "h": 51
+    },
+    "christmas/bgEscalator": {
+      "w": 3700,
+      "h": 1775
+    },
+    "christmas/bgWalls": {
+      "w": 3102,
+      "h": 1840
+    },
+    "christmas/bottomBop": {
+      "w": 4096,
+      "h": 2048
+    },
+    "christmas/christmasTree": {
+      "w": 662,
+      "h": 1018
+    },
+    "christmas/erect/bgEscalator": {
+      "w": 3700,
+      "h": 1775
+    },
+    "christmas/erect/bgWalls": {
+      "w": 3102,
+      "h": 1840
+    },
+    "christmas/erect/bottomBop": {
+      "w": 4096,
+      "h": 2048
+    },
+    "christmas/erect/christmasTree": {
+      "w": 665,
+      "h": 1021
+    },
+    "christmas/erect/fgSnow": {
+      "w": 128,
+      "h": 128
+    },
+    "christmas/erect/santa": {
+      "w": 4096,
+      "h": 2048
+    },
+    "christmas/erect/upperBop": {
+      "w": 4096,
+      "h": 2048
+    },
+    "christmas/erect/white": {
+      "w": 3301,
+      "h": 1172
+    },
+    "christmas/evilBG": {
+      "w": 2625,
+      "h": 1613
+    },
+    "christmas/evilSnow": {
+      "w": 3000,
+      "h": 262
+    },
+    "christmas/evilTree": {
+      "w": 617,
+      "h": 1108
+    },
+    "christmas/fgSnow": {
+      "w": 3300,
+      "h": 252
+    },
+    "christmas/santa": {
+      "w": 4096,
+      "h": 2048
+    },
+    "christmas/upperBop": {
+      "w": 4096,
+      "h": 2048
+    },
+    "cityruins2": {
+      "w": 1569,
+      "h": 565
+    },
+    "cutscene/burger-cutscene": {
+      "w": 1418,
+      "h": 158
+    },
+    "cutscene/counter-stretch": {
+      "w": 16,
+      "h": 256
+    },
+    "erect/bg": {
+      "w": 2609,
+      "h": 1332
+    },
+    "erect/bgDark": {
+      "w": 2450,
+      "h": 1250
+    },
+    "erect/bgLight": {
+      "w": 2450,
+      "h": 1250
+    },
+    "erect/bgtrees": {
+      "w": 2048,
+      "h": 2048
+    },
+    "erect/bricksGround": {
+      "w": 512,
+      "h": 64
+    },
+    "erect/brightLightSmall": {
+      "w": 687,
+      "h": 638
+    },
+    "erect/crowd": {
+      "w": 4096,
+      "h": 2048
+    },
+    "erect/lightAbove": {
+      "w": 840,
+      "h": 746
+    },
+    "erect/lightgreen": {
+      "w": 178,
+      "h": 188
+    },
+    "erect/lightred": {
+      "w": 179,
+      "h": 182
+    },
+    "erect/lights": {
+      "w": 2876,
+      "h": 562
+    },
+    "erect/orangeLight": {
+      "w": null,
+      "h": null
+    },
+    "erect/rando": {
+      "w": null,
+      "h": null
+    },
+    "erect/server": {
+      "w": 1224,
+      "h": 646
+    },
+    "erect/sniper": {
+      "w": null,
+      "h": null
+    },
+    "erect/stairsDark": {
+      "w": 1150,
+      "h": 1250
+    },
+    "erect/stairsLight": {
+      "w": 1150,
+      "h": 1250
+    },
+    "floor": {
+      "w": 5362,
+      "h": 754
+    },
+    "front-stool": {
+      "w": 2982,
+      "h": 321
+    },
+    "halloween_bg": {
+      "w": 3924,
+      "h": 2256
+    },
+    "lights/back-light-color": {
+      "w": 3709,
+      "h": 2049
+    },
+    "lights/back-light-white": {
+      "w": 2907,
+      "h": 1532
+    },
+    "lights/truck-light1": {
+      "w": 2804,
+      "h": 1328
+    },
+    "lights/truck-light2": {
+      "w": 2464,
+      "h": 1015
+    },
+    "limo/bgLimo": {
+      "w": 4096,
+      "h": 2048
+    },
+    "limo/erect/bgLimo": {
+      "w": 4096,
+      "h": 2048
+    },
+    "limo/erect/limoDrive": {
+      "w": 4096,
+      "h": 4096
+    },
+    "limo/erect/limoSunset": {
+      "w": 2091,
+      "h": 1568
+    },
+    "limo/erect/shooting star": {
+      "w": 512,
+      "h": 512
+    },
+    "limo/fastCarLol": {
+      "w": 1280,
+      "h": 720
+    },
+    "limo/henchmen": {
+      "w": 2048,
+      "h": 2048
+    },
+    "limo/limoDancer": {
+      "w": 2048,
+      "h": 2048
+    },
+    "limo/limoDrive": {
+      "w": 2048,
+      "h": 2048
+    },
+    "limo/limoOverlay": {
+      "w": 3262,
+      "h": 1659
+    },
+    "limo/limoSunset": {
+      "w": 1968,
+      "h": 1313
+    },
+    "mountains2": {
+      "w": 1951,
+      "h": 531
+    },
+    "philly/behindTrain": {
+      "w": 2216,
+      "h": 856
+    },
+    "philly/city": {
+      "w": 2271,
+      "h": 809
+    },
+    "philly/erect/behindTrain": {
+      "w": 2216,
+      "h": 856
+    },
+    "philly/erect/city": {
+      "w": 2271,
+      "h": 809
+    },
+    "philly/erect/sky": {
+      "w": 1729,
+      "h": 955
+    },
+    "philly/erect/street": {
+      "w": 2216,
+      "h": 856
+    },
+    "philly/sky": {
+      "w": 1729,
+      "h": 955
+    },
+    "philly/street": {
+      "w": 2216,
+      "h": 856
+    },
+    "philly/train": {
+      "w": 4096,
+      "h": 512
+    },
+    "philly/win": {
+      "w": 2119,
+      "h": 414
+    },
+    "phillyBlazin/lightning": {
+      "w": 1245,
+      "h": 1909
+    },
+    "phillyBlazin/skyBlur": {
+      "w": 1387,
+      "h": 495
+    },
+    "phillyBlazin/streetBlur": {
+      "w": 1629,
+      "h": 779
+    },
+    "phillyStreets/SpraycanPile": {
+      "w": 309,
+      "h": 199
+    },
+    "phillyStreets/erect/greyGradient": {
+      "w": 2585,
+      "h": 1034
+    },
+    "phillyStreets/erect/paper": {
+      "w": 2048,
+      "h": 1024
+    },
+    "phillyStreets/erect/phillyCars": {
+      "w": 1024,
+      "h": 512
+    },
+    "phillyStreets/erect/phillyConstruction": {
+      "w": 508,
+      "h": 782
+    },
+    "phillyStreets/erect/phillyForeground": {
+      "w": 2901,
+      "h": 1299
+    },
+    "phillyStreets/erect/phillyForegroundCity": {
+      "w": 1031,
+      "h": 614
+    },
+    "phillyStreets/erect/phillyHighway": {
+      "w": 1747,
+      "h": 671
+    },
+    "phillyStreets/erect/phillyHighwayLights": {
+      "w": 1096,
+      "h": 213
+    },
+    "phillyStreets/erect/phillyHighwayLights_lightmap": {
+      "w": null,
+      "h": null
+    },
+    "phillyStreets/erect/phillySkyline": {
+      "w": 2704,
+      "h": 1089
+    },
+    "phillyStreets/erect/phillyTraffic": {
+      "w": 3894,
+      "h": 1864
+    },
+    "phillyStreets/erect/phillyTraffic_lightmap": {
+      "w": 346,
+      "h": 458
+    },
+    "phillyStreets/phillyCars": {
+      "w": 479,
+      "h": 880
+    },
+    "phillyStreets/phillyConstruction": {
+      "w": 487,
+      "h": 761
+    },
+    "phillyStreets/phillyForeground": {
+      "w": 2901,
+      "h": 1299
+    },
+    "phillyStreets/phillyForegroundCity": {
+      "w": 986,
+      "h": 609
+    },
+    "phillyStreets/phillyHighway": {
+      "w": 1731,
+      "h": 655
+    },
+    "phillyStreets/phillyHighwayLights": {
+      "w": 1082,
+      "h": 197
+    },
+    "phillyStreets/phillyHighwayLights_lightmap": {
+      "w": 1082,
+      "h": 197
+    },
+    "phillyStreets/phillySkyline": {
+      "w": 2654,
+      "h": 1040
+    },
+    "phillyStreets/phillySmog": {
+      "w": 2761,
+      "h": 1125
+    },
+    "phillyStreets/phillyTraffic": {
+      "w": 3060,
+      "h": 1808
+    },
+    "phillyStreets/phillyTraffic_lightmap": {
+      "w": 336,
+      "h": 448
+    },
+    "smokeLeft": {
+      "w": 4096,
+      "h": 2048
+    },
+    "smokeRight": {
+      "w": 4096,
+      "h": 4096
+    },
+    "sserafim/cutscene/burger-cutscene": {
+      "w": 1418,
+      "h": 158
+    },
+    "sserafim/cutscene/counter-stretch": {
+      "w": 16,
+      "h": 256
+    },
+    "sserafim/lights/back-light-color": {
+      "w": 3709,
+      "h": 2049
+    },
+    "sserafim/lights/back-light-white": {
+      "w": 2907,
+      "h": 1532
+    },
+    "sserafim/lights/truck-light1": {
+      "w": 2804,
+      "h": 1328
+    },
+    "sserafim/lights/truck-light2": {
+      "w": 2464,
+      "h": 1015
+    },
+    "stageback": {
+      "w": 2560,
+      "h": 1400
+    },
+    "stagecurtains": {
+      "w": 2560,
+      "h": 1400
+    },
+    "stagefront": {
+      "w": 2560,
+      "h": 581
+    },
+    "tank0": {
+      "w": 1024,
+      "h": 1024
+    },
+    "tank1": {
+      "w": 512,
+      "h": 512
+    },
+    "tank2": {
+      "w": 1024,
+      "h": 1024
+    },
+    "tank3": {
+      "w": 1024,
+      "h": 1024
+    },
+    "tank4": {
+      "w": 1024,
+      "h": 1024
+    },
+    "tank5": {
+      "w": 1024,
+      "h": 1024
+    },
+    "tankBuildings": {
+      "w": 1597,
+      "h": 726
+    },
+    "tankClouds": {
+      "w": 2155,
+      "h": 235
+    },
+    "tankGround": {
+      "w": 1920,
+      "h": 1080
+    },
+    "tankMountains": {
+      "w": 1485,
+      "h": 741
+    },
+    "tankRolling": {
+      "w": 512,
+      "h": 1024
+    },
+    "tankRuins": {
+      "w": 1597,
+      "h": 726
+    },
+    "tankSky": {
+      "w": null,
+      "h": null
+    },
+    "tankWatchtower": {
+      "w": 2048,
+      "h": 1024
+    },
+    "tankmanKilled1": {
+      "w": 4096,
+      "h": 4096
+    },
+    "truck-door": {
+      "w": 276,
+      "h": 664
+    },
+    "truck-stuff": {
+      "w": 3512,
+      "h": 1648
+    },
+    "weeb/bgFreaks": {
+      "w": 1024,
+      "h": 1024
+    },
+    "weeb/erect/evil/backSpike": {
+      "w": 13,
+      "h": 35
+    },
+    "weeb/erect/evil/weebBackSpikes": {
+      "w": 561,
+      "h": 161
+    },
+    "weeb/erect/evil/weebSchool": {
+      "w": 511,
+      "h": 161
+    },
+    "weeb/erect/evil/weebStreet": {
+      "w": 466,
+      "h": 170
+    },
+    "weeb/erect/petals": {
+      "w": 2048,
+      "h": 2048
+    },
+    "weeb/erect/weebBackTrees": {
+      "w": 561,
+      "h": 161
+    },
+    "weeb/erect/weebSchool": {
+      "w": 511,
+      "h": 161
+    },
+    "weeb/erect/weebSky": {
+      "w": 466,
+      "h": 161
+    },
+    "weeb/erect/weebStreet": {
+      "w": 466,
+      "h": 170
+    },
+    "weeb/erect/weebTrees": {
+      "w": 3591,
+      "h": 1538
+    },
+    "weeb/erect/weebTreesBack": {
+      "w": 411,
+      "h": 161
+    },
+    "weeb/evil/weebBackTrees": {
+      "w": 561,
+      "h": 161
+    },
+    "weeb/evil/weebSchool": {
+      "w": 511,
+      "h": 161
+    },
+    "weeb/evil/weebStreet": {
+      "w": 466,
+      "h": 170
+    },
+    "weeb/evil/weebTrees": {
+      "w": 466,
+      "h": 170
+    },
+    "weeb/petals": {
+      "w": 2048,
+      "h": 2048
+    },
+    "weeb/weebBackTrees": {
+      "w": 561,
+      "h": 161
+    },
+    "weeb/weebSchool": {
+      "w": 511,
+      "h": 161
+    },
+    "weeb/weebSky": {
+      "w": 466,
+      "h": 161
+    },
+    "weeb/weebStreet": {
+      "w": 466,
+      "h": 170
+    },
+    "weeb/weebTrees": {
+      "w": 3591,
+      "h": 1538
+    },
+    "weeb/weebTreesBack": {
+      "w": 411,
+      "h": 161
+    }
+  }
+}

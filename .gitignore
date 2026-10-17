@@ -1,0 +1,5 @@
+
+# Downloads staged by the Drive connector while recovering assets. Never part of
+# the project: they are copies of files that live in Drive, and one of them is
+# 1.6 MB of runtime asset.
+google_drive/

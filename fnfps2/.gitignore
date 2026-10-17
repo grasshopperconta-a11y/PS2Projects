@@ -1,0 +1,31 @@
+build/uploads_ps2/
+build/log_ps2_teste.txt
+build/telas_ps2/
+build/pendrive/
+build/FNF_PS2_PENDRIVE.zip
+google_drive/
+
+# Downloads staged by the Drive connector while recovering assets. Never part of
+# the project: they are copies of files that live in Drive.
+google_drive/
+__pycache__/
+build/mc_vcr_ref.rle
+build/evidencia/
+build/charts-v3/
+*.o
+*.map
+*.elf
+
+# Toolchain extraido pelo with_toolchain.sh / harness_ps2dev.sh: binarios do
+# compilador, muitos megabytes cada, e reproduziveis a partir do tarball. Foram
+# commitados por acidente numa rodada anterior; daqui em diita ficam de fora.
+build/ps2dev-ee-min-fnf/
+build/ps2sdk_host/
+build/paths/
+# Binarios e logs do harness: saida de test/run_tests.sh, regeneraveis.
+build/fnf_harness
+build/fnf_harness_asan
+build/harness*.log
+build/harness_cc.log
+build/harness_assets/
+build/FNF_PS2.ELF
