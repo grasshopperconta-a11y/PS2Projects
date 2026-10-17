@@ -89,6 +89,44 @@ if [ ! -f "$ELF" ]; then
 fi
 cp "$ELF" "$OUT/FNF_PS2.ELF"
 
+# Um LEIA-ME na raiz do pendrive. A build 0.2.108 foi dada como "nao abriu" e
+# a installacao errada explica isso sozinha: o jogo le mass:/FNFPS2/assets/...,
+# entao se a pasta FNFPS2 nao estiver na RAIZ do pendrive, o jogo nao acha asset
+# nenhum, dorme para sempre e nao escreve log onde se espera. Este arquivo tira
+# essa duvida.
+cat > "$OUT/LEIA-ME.txt" <<'FIM'
+FNF PS2 -- COMO INSTALAR
+========================
+
+1. Descompacte este ZIP DIRETO NA RAIZ DO PENDRIVE.
+   Ao terminar, a raiz do pendrive tem de ficar assim:
+
+       FNF_PS2.ELF
+       FNFPS2/
+       LEIA-ME.txt
+
+   A pasta FNFPS2 tem de estar na RAIZ, nao dentro de outra pasta.
+   Se ficar mass:/FNFPS2/FNFPS2/... o jogo NAO abre.
+
+2. Rode FNF_PS2.ELF pelo seu lancador (uLE, OPL, ESR, etc).
+
+3. Para eu poder diagnosticar qualquer coisa so pelo log, mande de volta:
+
+       mass:/FNFPS2/FNF_COLHEITA.txt
+
+   Se esse arquivo nao existir, procure na RAIZ do pendrive:
+       mass:/FNF_COLHEITA.txt
+   (o jogo tenta os dois lugares; se a pasta FNFPS2 nao estiver
+   na raiz, ele escreve na raiz.)
+
+   O log cresce a cada partida -- ele eh somado, nao substituido.
+   Para uma colheita limpa, apague o FNF_COLHEITA.txt antes de testar.
+
+O log tem uma linha por sprite por quadro, com a geometria ja recortada.
+Com ele da para ver, sem voce descrever nada: sprite fora da faixa visivel,
+fundo esticado, item do menu deslocado, e em qual quadro o jogo parou.
+FIM
+
 echo
 echo "== conteudo =="
 find "$OUT" -type f | wc -l
