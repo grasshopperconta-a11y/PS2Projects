@@ -337,6 +337,12 @@ void telemetry_raw(const char *text)
     write_text(text);
     write_text("\n");
     flush_output();
+    /* Sincroniza aqui, e so aqui e em telemetry_phase(): as duas sao chamadas
+       poucas vezes na vida do processo -- os marcos de boot, um cabecalho. Se
+       o jogo pendurar nessa altura, a linha TEM de estar no cartao, porque o
+       usuario vai resetar e nunca vai haver um close() limpo. Como sao raras,
+       o fsync nao custa nada. */
+    if (!output_error) fsync(log_fd);
 }
 
 /* Marco de fase, com o mesmo descritor unico. A versao anterior abria e
@@ -350,6 +356,7 @@ void telemetry_phase(const char *phase, int row, int code)
     snprintf(line, sizeof(line), "P,%s,%d,%d", phase ? phase : "?", row, code);
     write_line(line);
     flush_output();
+    if (!output_error) fsync(log_fd);
 }
 
 void telemetry_io(const char *op, const char *path, long result, long detail)
@@ -397,7 +404,16 @@ void telemetry_flush(void)
     render_event_count = 0;
 
     flush_output();
-    if (!output_error) fsync(log_fd);
+    /* fsync NO MAXIMO A CADA 30 QUADROS -- duas vezes por segundo.
+       A versao que foi para o console sincronizava EM TODO QUADRO: 60 fsync
+       por segundo no mesmo descritor. O usbhdfsd nao aceita fsync repetido, e
+       cada uma forca um flush do USB que custa de dezenas a centenas de
+       milissegundos. O IOP passava mais tempo sincronizando o pendrive do que
+       servindo o jogo, o fluxo de dados parava, e o jogo nao abriu -- tres
+       builds seguidas, 0.2.108, 0.2.109 e mais esta. Duas sincronizacoes por
+       segundo garantem que um reset nao perca mais de meio segundo de log, e
+       o custo de sincronizacao cai para menos de 5% do tempo de quadro. */
+    if (!output_error && (flush_count % 30u) == 0u) fsync(log_fd);
     flush_count++;
 }
 

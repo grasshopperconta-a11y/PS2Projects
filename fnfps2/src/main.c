@@ -946,8 +946,27 @@ static volatile int g_capture_status_write_enabled=1;
    buffer. Dois escritores no mesmo arquivo: no pendrive a ultima colheita veio
    com 0 bytes -- o arquivo existia e nao tinha nada dentro. Agora tudo sai pelo
    descritor unico da telemetria. */
+/* Marcador de boot: UM arquivo, reescrito a cada passo, com fsync.
+   O log sozinho nao basta para diagnosticar um boot que nao acontece: se o
+   pendrive nunca montou, nao ha log nenhum, e eu fico sem nenhuma pista. Este
+   arquivo diz o ultimo passo que o jogo completou. Ele para de ser escrito
+   depois da fase de boot, para nao custar E/S no jogo rodando. */
+static int g_boot_mark_n=0;
+static void boot_mark(const char*phase,int code){
+  int fd;char b[128];int n;
+  if(g_boot_mark_n>400)return;
+  g_boot_mark_n++;
+  fd=open("mass:/FNFPS2/BOOT.txt",O_WRONLY|O_CREAT|O_TRUNC,0666);
+  if(fd<0)fd=open("mass:/BOOT.txt",O_WRONLY|O_CREAT|O_TRUNC,0666);
+  if(fd<0)return;
+  n=snprintf(b,sizeof(b),"passo %d: %s code=%d\n",g_boot_mark_n,phase,code);
+  write_all_fd(fd,b,n);
+  fsync(fd);
+  close(fd);
+}
 static void capture_status(const char*phase,int row,int code){
   if(!g_capture_status_write_enabled)return;
+  boot_mark(phase,code);
   telemetry_phase(phase,row,code);}
 static u32 title_intro_phase(void){
  int queued_bytes;
