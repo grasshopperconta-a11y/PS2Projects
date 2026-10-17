@@ -139,9 +139,45 @@ static const char *const log_paths[] = {
    e nenhuma pista do motivo. Agora ele tenta abrir o arquivo DIRETO primeiro,
    so carrega modulo se precisar, nao desiste por falha de modulo, e registra
    o resultado de cada etapa. */
-int telemetry_init(const char *build_id, const char *elf_path)
+/* Tenta abrir o log em qualquer um dos caminhos. Separada do init porque o
+   init NAO PODE ser a unica chance.
+
+   reset_iop() desmonta o pendrive que o lancador montou. Depois de recarregar
+   usbd/usbhdfsd, a re-enumeracao do USB levou mais de 5 segundos no console do
+   usuario: o init esperava 5 segundos, desistia, e o log nunca era aberto.
+   Todas as escritas seguintes viraram no-op silencioso, e a colheita veio com
+   0 bytes tres vezes seguidas.
+
+   A prova de que o mass: aparece DEPOIS: o boot_mark() do main.c, que abre o
+   PROPRIO arquivo e nao depende desta maquina, escreveu o passo 1 normalmente
+   -- porque quando ele rodou ja tinham se passado os 6,5 segundos de espera do
+   init e o pendrive tinha montado. O dispositivo aparece; o init eh que tinha
+   desistido cedo demais.
+
+   A funcao eh barata -- um punhado de open() que falham rapido -- e por isso
+   pode ser chamada de novo mais tarde, sem custo para o jogo. */
+static void log_try_open(int *path_index)
 {
     int i;
+    if (log_fd >= 0) return;
+    for (i = 0; log_paths[i] && log_fd < 0; ++i) {
+        int t;
+        int tentativas = (i == 0) ? 50 : 5;
+        for (t = 0; t < tentativas; ++t) {
+            log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
+            if (log_fd >= 0) { *path_index = i; break; }
+            DelayThread(100000);
+        }
+    }
+}
+
+/* Quantas vezes a reabertura tardia ja foi tentada. Limitada para nao virar
+   um laco infinito de open() falhando a cada quadro, para sempre. */
+static int log_late_attempts;
+#define LOG_LATE_MAX 40
+
+int telemetry_init(const char *build_id, const char *elf_path)
+{
     int modules_loaded = 0;
     int module_failures = 0;
     int path_index = -1;
@@ -178,15 +214,7 @@ int telemetry_init(const char *build_id, const char *elf_path)
        segundo cada: sao so um esteio. No total a espera maxima eh de 6,5
        segundos -- antes eram 20, e 20 segundos de tela preta antes de o jogo
        comecar eh indistinguivel de "o jogo nao abriu". */
-    for (i = 0; log_paths[i] && log_fd < 0; ++i) {
-        int t;
-        int tentativas = (i == 0) ? 50 : 5;
-        for (t = 0; t < tentativas; ++t) {
-            log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
-            if (log_fd >= 0) { path_index = i; break; }
-            DelayThread(100000);
-        }
-    }
+    log_try_open(&path_index);
 
     if (log_fd < 0) {
         /* Nao abriu em lugar nenhum. O numero volta codificado para a tela
@@ -292,7 +320,15 @@ void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
                      u32 band_cull_rects)
 {
     char line[512];
-    if (!usb_ready) return;
+    /* A mesma segunda chance, uma vez por quadro. Se o pendrive montar depois
+       do boot, o log passa a sair a partir do quadro em que isso acontecer, em
+       vez de ficar mudo para sempre. */
+    if (log_fd < 0 && !output_error && log_late_attempts < LOG_LATE_MAX) {
+        int dummy = -1;
+        log_late_attempts++;
+        log_try_open(&dummy);
+    }
+    if (!usb_ready || log_fd < 0 || output_error) return;
     frames_logged++;
     snprintf(line, sizeof(line),
         "S,%u,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u,%u,%d,%d,%d,%d,%d,%d,%d,%d,%u,%u,%u",
@@ -352,6 +388,14 @@ void telemetry_raw(const char *text)
 void telemetry_phase(const char *phase, int row, int code)
 {
     char line[192];
+    /* Segunda chance: se o init desistiu cedo demais, eh aqui. telemetry_phase()
+       eh chamado poucas vezes no boot e quase nunca durante o jogo, entao
+       tentar de novo nao custa nada. */
+    if (log_fd < 0 && !output_error && log_late_attempts < LOG_LATE_MAX) {
+        int dummy = -1;
+        log_late_attempts++;
+        log_try_open(&dummy);
+    }
     if (!usb_ready || log_fd < 0 || output_error) return;
     snprintf(line, sizeof(line), "P,%s,%d,%d", phase ? phase : "?", row, code);
     write_line(line);
