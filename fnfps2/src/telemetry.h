@@ -16,9 +16,25 @@ void telemetry_frame(u32 frame, u64 begin, u64 after_draw, u64 after_vsync,
 void telemetry_flush(void);
 
 /* Linha crua, escrita e esvaziada na hora: para o que nao pode esperar o
-   flush do quadro (a lista de sprites, os marcos de fase). Se o jogo pendurar,
-   o que jah passou por aqui estah no cartao. */
+   flush do quadro (os marcos de fase). Se o jogo pendurar, o que jah passou
+   por aqui estah no cartao.
+
+   ATENCAO, e esta atencao eh a razao de esta funcao existir separada da
+   telemetry_line(): cada chamada aqui faz UMA escrita no pendrive, e uma
+   escrita no mass: pelo fileXio eh uma chamada de RPC sincrona para o IOP,
+   que por sua vez escreve um bloco no USB. Isso custa de poucos a muitos
+   milissegundos. Usar isto por sprite, dentro do laco de render, foi o que
+   deixou a build 0.2.108 sem abrir no console: eram ~20 escritas bloqueantes
+   por quadro, no meio do quadro, e o jogo passou a rodar a alguns quadros por
+   segundo -- tela parada, sem reacao. Para volume alto, use telemetry_line(),
+   que so acumula no buffer e sai no flush do quadro. */
 void telemetry_raw(const char *text);
+
+/* Linha de volume: acumula no buffer e NAO escreve. Sai no proximo
+   telemetry_flush(), que acontece uma vez por quadro. Eh o caminho certo para
+   tudo que eh gerado muitos vezes por quadro -- a lista de sprites, por
+   exemplo, que pode ter centenas de linhas. */
+void telemetry_line(const char *text);
 
 /* Marco de fase (boot, troca de estado, travamento). Mesmo descritor unico do
    resto do log -- nunca um segundo escritor abrindo e truncando o arquivo. */

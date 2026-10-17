@@ -326,6 +326,9 @@ static int g_dl_hdr=0;
 static void dl_header(void){
   if(g_dl_hdr){return;}
   g_dl_hdr=1;
+  /* Uma linha, uma vez na vida do processo: pode ser telemetry_raw(), que
+     escreve na hora. O que NAO pode eh telemetry_raw() por sprite -- ver
+     telemetry_line(). */
   telemetry_raw("# colunas sprite: D,quadro,i,estado,x,y,w,h,u,v,uw,vh,alfa,"
                 "vy0,vy1,vy_span,gsx0,gsy0,gsx1,gsy1  (geometria JA recortada)");
 }
@@ -344,7 +347,13 @@ static void dl_dump(u32 frame){
       frame,i,(unsigned)d->estado,d->x,d->y,d->w,d->h,d->u,d->v,d->uw,d->vh,
       (unsigned)d->alfa,d->vy0,d->vy1,d->vy1-d->vy0,
       g_dl_gs[i*4+0],g_dl_gs[i*4+1],g_dl_gs[i*4+2],g_dl_gs[i*4+3]);
-    telemetry_raw(b);
+    /* telemetry_line(), NAO telemetry_raw(). A lista inteira sai no flush do
+       quadro, em UMA escrita. A versao que foi para o console chamava
+       telemetry_raw() por sprite, e cada chamada era uma escrita bloqueante
+       no pendrive dentro do laco de render: ~20 escritas por quadro, o jogo
+       caiu para poucos quadros por segundo e a tela ficou parada -- foi lido
+       como "o jogo nao abriu". */
+    telemetry_line(b);
   }
 }
 static void dl_gravar(void){

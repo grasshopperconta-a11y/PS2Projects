@@ -75,12 +75,21 @@ static int init_result;
 static u32 flush_count;
 static u32 frames_logged;
 
+/* Escreve o buffer no descritor. NAO faz fsync: usbhdfsd nao aceita fsync
+   repetido entre blocos, e a sincronizacao acontece uma vez por quadro, em
+   telemetry_flush().
+
+   Se a escrita falhar, o log MORRE de proposito. Um log que nao escreve nao
+   pode travar o jogo -- essa eh a regra que a build 0.2.108 quebrou, e eh por
+   isso que ela nao abriu no console. */
 static void flush_output(void)
 {
     unsigned int done = 0;
     if (log_fd < 0 || output_used == 0) { output_used = 0; return; }
     while (done < output_used) {
         int result = write(log_fd, output_buffer + done, output_used - done);
+        /* result == 0 nao eh "escreveu zero, tenta de novo": no fileXio quer
+           dizer falha. Contado como erro, senao este laco nao termina nunca. */
         if (result <= 0) { output_error = 1; break; }
         done += (unsigned int)result;
     }
@@ -164,9 +173,15 @@ int telemetry_init(const char *build_id, const char *elf_path)
 
     /* 2. Agora sim tenta os caminhos, com repeticao para o caso de o pendrive
        ainda estar sendo montado pelo lancador. */
+    /* O primeiro caminho (mass:/FNFPS2/) espera ate 5 segundos, porque pode ser
+       que o lancador ainda esteja montando o pendrive. Os outros esperam meio
+       segundo cada: sao so um esteio. No total a espera maxima eh de 6,5
+       segundos -- antes eram 20, e 20 segundos de tela preta antes de o jogo
+       comecar eh indistinguivel de "o jogo nao abriu". */
     for (i = 0; log_paths[i] && log_fd < 0; ++i) {
         int t;
-        for (t = 0; t < 50; ++t) {
+        int tentativas = (i == 0) ? 50 : 5;
+        for (t = 0; t < tentativas; ++t) {
             log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
             if (log_fd >= 0) { path_index = i; break; }
             DelayThread(100000);
@@ -297,6 +312,19 @@ void telemetry_state(u32 frame, int ui_state, int target_state, int selection,
     write_line(line);
 }
 
+/* Linha de volume: acumula no buffer e nao escreve. Uma escrita no mass: pelo
+   fileXio eh um RPC sincrono para o IOP, que escreve um bloco no USB -- custa
+   de poucos a muitos milissegundos. A lista de sprites de um quadro pode ter
+   centenas de linhas; chamar telemetry_raw() para cada uma delas colocava
+   centenas de escritas bloqueantes dentro do laco de render, e foi isso que
+   deixou a 0.2.108 sem abrir no console. Aqui a linha custa um memcpy. */
+void telemetry_line(const char *text)
+{
+    if (!usb_ready || log_fd < 0 || output_error) return;
+    write_text(text);
+    if (!output_error) write_text("\n");
+}
+
 /* Linha crua, escrita NA HORA.
    O buffer de 8 KB servia para nao custar uma chamada de escrita por linha,
    mas cobrava caro justamente quando o log importa: se o jogo pendura, tudo
@@ -318,7 +346,7 @@ void telemetry_raw(const char *text)
 void telemetry_phase(const char *phase, int row, int code)
 {
     char line[192];
-    if (!usb_ready) return;
+    if (!usb_ready || log_fd < 0 || output_error) return;
     snprintf(line, sizeof(line), "P,%s,%d,%d", phase ? phase : "?", row, code);
     write_line(line);
     flush_output();
