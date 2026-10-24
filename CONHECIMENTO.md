@@ -318,6 +318,38 @@ Offsets em floats: `v0.x`=0 `v0.y`=1 `v0.z`=2, `t0.s`=4 `t0.t`=5,
 `vertex_t` = 12 B (z é `unsigned int`); `texel_t`/`color_t` = 8 B.
 ⚠️ Ler `v1.y` no offset 3 silenciosamente devolve `t0.s`.
 
+### A "linha abaixo dos botões" — o que já se descartou, com medição
+
+O usuário descreve: *"uma linha que pisca de forma repetida, como se seguisse
+os sprites da animação, em alguns botões (quase todos), em estados específicos:
+câmera se movendo, câmera estática, não selecionado, selecionado"*.
+
+**Descartado, cada um com sua medição:**
+
+1. **Não é geometria.** Em 545 itens do menu no log do harness: escala `h/vh`
+   = **1,0** em todos; `x`, `y` e `vy0` com fração **0,0** em todos (nenhum
+   subpixel); `vy_span == h` em todos. O blit é 1:1 exato.
+2. **Não é o "1 pixel a mais" do quad do GS.** Todo sprite sai 1 px maior que a
+   região de textura (`gsx1-gsx0 = w+1`). Isso é **oficial do ps2sdk**, não
+   defeito do porto: `ee/draw/src/draw2d.c` define
+   `START_OFFSET 2047.5625f` (= 2048 − 0,4375 + 1) para v0 e
+   `END_OFFSET 2048.5625f` (= 2048 + 0,5625 + 1) para v1 — diferença de
+   exatamente 1,0, em `draw_rect_textured`. `dl_sprite()` replica essa mesma
+   conversão.
+3. **Não é o atlas.** `tools/inspecionar_atlas.py` decodifica o
+   `menu_cache.rle` REAL e replica os três passos do jogo (RLE, `dilate_rgb`,
+   `resample_phys`). Medido nos 30 quadros originais e nos 30 reamostrados: o
+   maior desvio local de alfa é **12,1 de 128 (9%)**, e as bordas são fades
+   suaves (STORY MODE se=0, últimas 5 linhas: 83.3, 61.2, 32.0, 12.6, 3.8).
+   Não há linha de 1 px na textura.
+4. **Não é duplicação de sprite** e **não é o menu voltar diferente** — ver §12.
+
+**O que continua sem explicação.** A causa não é conhecida. Os suspeitos que
+restam são a rasterização do GS com filtro LINEAR (`bind_texture_filter(...,1)`)
+e a interação do `END_OFFSET` do ps2sdk com o mapeamento UV — mas **isso é
+hipótese, não medição**, e não vou agir sem dado. O dado que decide é um log do
+console com a linha aparecendo, porque o log tem o quadro, o item e o estado.
+
 ### Geometria do menu principal
 
 - Fundo: `bg_y = -37.978227f - (menu_cam_y - 360.0f) * 0.085f`, altura
