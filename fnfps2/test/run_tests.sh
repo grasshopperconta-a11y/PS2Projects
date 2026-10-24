@@ -372,5 +372,17 @@ else
           "zero comportamento indefinido, zero vazamento"
 fi
 
+echo "== ponte de comando remoto =="
+# Cobre dois defeitos que jah aconteceram de verdade:
+#   - o .cmd gerado comparava %FNF_PONTE% com @@PONTE@@ e, depois de
+#     substituir o endereco real, a comparacao ficava sempre VERDADEIRA,
+#     entao o programa dava erro em todo uso;
+#   - a trava de System32 tinha 'winssxs' onde a pasta real eh 'WinSxS'.
+if [ -x test/test_remote.sh ]; then
+    ./test/test_remote.sh || exit 1
+else
+    sh test/test_remote.sh || exit 1
+fi
+
 echo
 echo "ALL SUITES PASSED"

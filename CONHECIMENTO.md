@@ -472,6 +472,78 @@ história, e só na tela dos nomes das semanas.
 várias sessões e entreguei pendrive com o bug. Verificação que não **impede** o
 build não é verificação.
 
+## 13. Ponte de comando remoto (`tools/remote/`)
+
+Canal para eu executar comandos no PC do usuário e receber a saída. Nasceu de
+um pedido dele: *"você mesmo pode criar um programa que faça isto e eu deixo
+aberto aqui no meu pc"*.
+
+### Arquitetura — dois lados, duas seguranças diferentes
+
+| | lado do CLIENTE (PC do usuário) | lado do OPERADOR (eu) |
+|---|---|---|
+| rota | `POST /poll`, `/done`, `/chunk/*` | `POST /op/job` |
+| exige | `TOKEN_CLIENTE` | `127.0.0.1`/`::1` **e** `TOKEN_OPERADOR` |
+| pode | receber trabalho, devolver resultado | enfileirar comando |
+
+A separação é deliberada: **quem descobre a URL pública não consegue injetar
+comando nenhum** — para isso precisa do `TOKEN_CLIENTE`, que só existe dentro
+do programa do usuário. E o operador tem duas barreiras independentes: vem da
+própria máquina **e** acerta o token.
+
+Os tokens são gerados com `secrets.token_hex(32)` e **persistidos em disco**
+(`tools/remote/estado/`), então um restart do servidor não invalida o cliente
+que está rodando há horas no PC do usuário. Esse diretório está no
+`.gitignore` — ver §14.
+
+### A trava de System32
+
+Fica **no cliente**, antes de qualquer execução, e é uma recusa dura: o
+comando nem roda, devolve `rc=99` e me explica por quê. A normalização é
+`minusculo -> sem espacos -> barra normalizada`, então
+`"C:\Windows\System 32"`, `c:/windows/SYSTEM32` e `S Y S T E M 3 2` caem
+todos no mesmo padrão.
+
+**O buraco que existiu e foi fechado:** eu tinha escrito `winssxs`, mas a
+pasta real é `WinSxS`, cujo lowercase é `winsxs` — **um `s` a menos**. Um
+comando em WinSxS passava direto. Só foi pego porque o teste de regressão
+cobre `C:\WINDOWS\WinSxS\x` e `C:\WINDOWS\WINSXS\manifest`. Um teste que
+não exercita o caso real não protege de nada.
+
+### O bug do `.cmd` que quebraria todo uso
+
+O template comparava `%FNF_PONTE%` com `@@PONTE@@`. Depois de o gerador
+substituir o endereço real, a comparação virou *"endereco == endereco"* —
+**sempre verdadeira**, então o programa dava erro e saía em 100% dos usos.
+Eu só peguei porque reli o `.cmd` gerado em vez de confiar no template.
+Corrigido: a validação agora é `findstr /b /c:"http"`, que continua significativa
+depois da substituição. Coberto por teste.
+
+### Contar caracteres em batch dá margem a erro
+
+A primeira versão media o tamanho da senha com
+`for /f %%A in ('echo %FNF_TOKEN%') do set /a _TAM+=1`, que conta **palavras**,
+não caracteres. A validação de tamanho ficou no PowerShell, que conta certo; o
+batch só valida o endereço.
+
+### O que eu NÃO consegui verificar
+
+**A URL pública não responde de dentro do meu sandbox** — o allowlist de saída
+daqui não inclui o domínio do proxy. O servidor funciona (testado em
+`127.0.0.1`), mas *não posso provar* que o PC do usuário alcança a URL. Por
+isso o LEIA-ME manda o usuário abrir `<ponte>/health` no navegador antes de
+qualquer coisa: se aparecer `{"ok": true, ...}`, o canal está vivo.
+
+Além disso a URL **morre com a minha sessão**. Isso está dito de forma bem
+clara no LEIA-ME, porque senão o usuário deixaria o programa ligado de um dia
+para o outro esperando eu aparecer.
+
+### Teste
+
+`test/test_remote.sh`, chamado por `test/run_tests.sh`. 20 verificações:
+trava (14 bloqueios + 12 liberações), gerador, sintaxe, e o ciclo completo da
+ponte com as quatro recusas de autenticação.
+
 ### Layout do pendrive (o jogo exige)
 
 ```
