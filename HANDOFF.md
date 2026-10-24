@@ -127,58 +127,33 @@ o usuário reportou, sem ele precisar descrever nada. Use sempre.
 
 ## 6. Próximos passos, em ordem
 
-1. **Confirmar em hardware que a 0.2.111 abre e que o log funciona.** Sem isso,
+1. **Confirmar em hardware que a 0.2.112 abre e que o log sai LIMPO.** Sem isso,
    nada mais pode ser afirmado. Peça ao usuário: rodar, e mandar
-   `FNF_COLHEITA.txt` + `BOOT.txt`.
-2. **Corrigir o menu desenhando cada item 2× por quadro.** A descoberta já está
-   feita (o log mostra 8 sprites onde deveriam ser 4). Falta achar a segunda
-   chamada e removê-la. Ver `PROXIMOS_PASSOS.md` P1.
-3. **Investigar os itens quebrados ao voltar do modo história.** O log já
-   registra `(y,h)` de cada item por quadro.
+   `FNF_COLHEITA.txt` + `BOOT.txt`. A 0.2.112 é a primeira que escreve **uma
+   rodada por arquivo** (`O_TRUNC`); as anteriores acumulavam.
+2. **Investigar os itens quebrados ao voltar do modo história.** Localmente o
+   menu volta idêntico (2 visitas, mesmas 4 posições), então o sintoma do
+   usuário não é reproduzível no harness. **Perguntar o que exatamente está
+   bugado antes de mexer no código** — ver `PROXIMOS_PASSOS.md` P2.
+3. **Investigar a linha estranha abaixo dos botões.** Sem dado que a explique.
+   Nas capturas da 0.2.106 o único fora-da-faixa eram 3 pixels na linha 6, no
+   topo. Não concluir nada sem evidência nova.
 4. **Reproduzir o travamento do modo história.** O harness atravessa o jogo
-   inteiro sem travar. Se o console travar, o `BOOT.txt` com marca por quadro
-   vai dizer em qual quadro.
+   inteiro 12× sem travar. Se o console travar, o `BOOT.txt` com marca por
+   quadro diz em qual quadro.
 5. **Tutorial.** Câmera travada no BF, sem notas, sem barra de acerto,
    personagens não animando, música toca.
 6. **Otimização** — objetivo declarado do usuário. Ver `PROXIMOS_PASSOS.md` P5.
 
----
+### ⚠️ Duas "descobertas" minhas que eram FALSAS — não repetir
 
-## 7. O que está neste ZIP
+- **"O menu desenha cada item duas vezes."** Falso. Vinha de ler um log com
+  quatro execuções acumuladas. Um quadro do estado 6 tem 5 sprites: 1 fundo e 4
+  itens. Corrigido e documentado em `PROXIMOS_PASSOS.md` P1.
+- **"O menu volta com cara diferente depois do roteiro."** Falso. A contagem por
+  quadro varia por causa do piscar do confirmar (16 piscadas). Comparando o
+  conjunto de posições por visita, as 2 visitas são idênticas. P2.
 
-```
-REGRAS.md                     regras do projeto (leia primeiro)
-HANDOFF.md                    este arquivo
-CONHECIMENTO.md               tudo que foi medido, com fonte
-PROXIMOS_PASSOS.md            detalhamento do que falta
-fnfps2/                       código-fonte, ferramentas e testes
-  src/                        inclusive main.c, telemetry.c/.h
-  tools/                      with_toolchain.sh, run_harness.sh, analisa_log.py...
-  test/                       suite e harness
-  Makefile, VERSION, *.md
-docs/FNF_PS2_PORT_PLAN.md     plano original do porte
-PS2SDK-Complete-Documentation.md   referência do ps2sdk (13 MB)
-evidencia-console/            BOOT.txt, log e capturas do último teste
-```
-
-O ELF compilado **não** está aqui (o ambiente de trabalho o perdeu num reset).
-Baixe do Drive: `1MZ4wEki3gQB5Hj9y7HSWE6x56HsnRmB1`, ou recompile com o comando
-do §3.
-
----
-
-## 8. Aviso sobre o ambiente de trabalho
-
-O sandbox em que este projeto foi desenvolvido **é resetado periodicamente**.
-Quando isso acontece:
-
-- `google_drive/` (toolchain + assets) desaparece;
-- `fnfps2/build/` desaparece;
-- o histórico local do git volta ao commit inicial.
-
-**Recuperação:** `git fetch origin`, depois
-`git reset --hard $(git ls-remote origin arena/4c50659b-ps2projectes | cut -f1)`.
-Confira o tip real com `git ls-remote`, não com `git log origin/...`.
-
-Guarde arquivos importantes **no repositório**, não em `/tmp` — `/tmp` também é
-limpo, e um `rm -rf` de staging já apagou três documentos deste projeto.
+A lição das duas: **o log tem de ser lido por rodada, e a contagem por quadro
+não é medida de nada.** `tools/analisa_log.py` agora faz as duas coisas certo, e
+`test/run_tests.sh` tem um teste que falha se voltar atrás.

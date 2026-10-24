@@ -28,71 +28,65 @@ hardware.** Até ser, nenhuma outra afirmação sobre o estado do projeto é seg
 
 ---
 
-## P1 — O menu desenha cada item duas vezes
+## P1 — ❌ DESCARTADO: "o menu desenha cada item duas vezes" NÃO EXISTE
 
-**O que já se sabe, medido no log:**
+**Esta descoberta estava registrada aqui como o problema número 1 do projeto.
+Ela é FALSA e veio de um defeito meu. Fica documentada porque a causa do erro é
+a parte mais útil de lembrar.**
 
-No estado 6 (menu principal), um quadro tem **8 sprites**, não 4:
+**O que eu afirmei:** que no estado 6 um quadro tinha 8 sprites em vez de 4, cada
+item desenhado duas vezes, na ordem 1,2,3,4 / 1,2,3,4, com geometria idêntica.
 
-```
-quadro 364 (estado 6): 8 sprites
-  i= 1 x=  199.0 y= 181.0 w= 242.0 h= 57.0 ...
-  i= 2 x=  224.0 y= 255.0 w= 193.0 h= 58.0 ...
-  i= 3 x=  198.0 y= 332.0 w= 244.0 h= 52.0 ...
-  i= 4 x=  128.0 y=   94.0 w= 384.0 h= 81.0 ...
-  i= 1 x=  199.0 y= 181.0 w= 242.0 h= 57.0 ...   <- repetido
-  i= 2 x=  224.0 y= 255.0 w= 193.0 h= 58.0 ...   <- repetido
-  i= 3 x=  198.0 y= 332.0 w= 244.0 h= 52.0 ...   <- repetido
-  i= 4 x=  128.0 y=   94.0 w= 384.0 h= 81.0 ...   <- repetido
-```
+**O que a medição mostra:** o log do harness continha **quatro execuções** no
+mesmo arquivo — a linha `P,SHUTDOWN` aparecia 4 vezes — porque `telemetry.c`
+abria o `FNF_COLHEITA.txt` com `O_APPEND`. Li o quadro 364 duas vezes, uma em
+cada execução, e interpretei como desenho duplo.
 
-A ordem é **1,2,3,4 / 1,2,3,4** — duas passagens completas, não duplicação por
-item. E a geometria das duas cópias é **idêntica**.
+**A prova:** com o log aberto por `O_TRUNC` (uma rodada, um arquivo), o quadro
+364 tem **5 sprites** — 1 fundo e 4 itens, cada um uma vez só. Não existe
+segunda passagem, não existe duplicação de alpha, e o laço de itens de
+`src/main.c` está correto: para `selection=0` ele gera mi = 1,2,3,4,0, cada um
+uma vez.
 
-**Por que importa:** dobra o alpha (os botões ficam com cor errada) e dobra as
-chamadas de desenho do menu. É a melhor candidata a explicar a "linha estranha
-abaixo dos botões" que o usuário reporta desde o início.
+**Corrigido em 0.2.112** (commit `d2eed51`), com teste de regressão em
+`test/run_tests.sh` que proíbe os dois falsos positivos: item repetido dentro do
+mesmo quadro, e menu com "cara diferente" entre visitas.
 
-**O que já se sabe sobre o código:**
-
-`src/main.c` tem **dois** blocos `if(ui_state==6)`:
-
-- linha ~1582: desenha o **fundo** (parallax, `memcpy(g_up_bounce,...)`,
-  `upload_raw`, `draw_clear`, `bind_texture`, `sprite_region_phys`).
-- linha ~1654: desenha os **itens**
-  (`for(order=0;order<5;order++){ mi=(order==4)?selection:(order>=selection?order+1:order); ... }`).
-
-O laço de itens, por si só, **não duplica**: para `selection=0` gera
-mi = 1,2,3,4,0 (cada um uma vez); para `selection=2` gera 0,1,3,4,2.
-
-**O que falta descobrir:** onde vem a segunda passagem. Hipóteses a testar,
-**nesta ordem**, e cada uma tem de ser provada antes de ser aceita:
-
-1. O bloco de itens (linha ~1654) está dentro de um laço que corre duas vezes.
-2. Há uma segunda chamada ao mesmo bloco em outro lugar do quadro.
-3. O pacote é construído duas vezes por quadro (duas chamadas ao builder).
-
-**Como investigar:** o log já dá a resposta. Contar sprites por quadro em cada
-estado, e ver em qual estado a contagem é o dobro do esperado. Depois, colocar
-um marcador no início e no fim do bloco de itens e ver quantas vezes cada um
-aparece.
+**O que ainda NÃO sei:** de onde vem a "linha estranha abaixo dos botões" que o
+usuário reporta desde o início. Não tenho dado que a explique. Nas 6 capturas de
+hardware da 0.2.106 o único conteúdo fora da faixa visível (56..391) eram **3
+pixels escuros na linha 6**, em x=256..258 — no TOPO da tela, não embaixo dos
+botões. Não tiro conclusão nenhuma a partir daí.
 
 ---
 
-## P2 — Itens quebrados ao voltar do modo história
+## P2 — ❌ DESCARTADO (localmente): o menu NÃO volta diferente
 
-**O que já se sabe:** o usuário reporta desde a 0.2.105. O log registra `(y,h)`
-de cada item do menu por quadro, então a comparação é mecânica.
+**O sintoma:** o usuário reporta, desde a 0.2.105, que ao voltar do modo
+história para o menu principal os botões aparecem bugados.
 
-**O que já se sabe sobre o código:** ao entrar no estado 6 vindo de uma
-transição, há `if(ui_state==6){selection=g_menu_remembered; ...}` — a seleção é
-restaurada, e um comentário no código diz que o original **snapa** a câmera para
-o item lembrado em vez de varrer.
+**O que foi medido em 0.2.112:** comparando o **conjunto de posições por visita**
+(um bloco de quadros consecutivos no estado 6), e não a lista por quadro:
 
-**O que falta:** comparar, no log, o layout do menu
-(`[(y,h),...]` ordenado) na **primeira** visita ao menu com o das visitas
-posteriores. `analisa_log.py` já faz essa comparação e acusa quando diferem.
-Rodar num log que atravesse menu → story → menu e ver se acusa.
+```
+2 visitas ao menu (blocos consecutivos no estado 6):
+  visita 0: quadros 364..497  4 posições
+  visita 1: quadros 500..514  4 posições
+o menu tem a MESMA cara nas 2 visitas:
+  [(94, 81), (181, 57), (255, 58), (332, 52)]
+```
+
+**Por que o alarme antigo era falso:** a contagem de sprites por quadro varia de
+propósito. Ao confirmar um item, `menu_flicker_step()` (main.c:856) pisca o item
+selecionado **16 vezes** (`g_fl_item_left=16`, `g_fl_item_tl=0.06`) e some em
+metade desses quadros. Um quadro com 3 itens em vez de 4 é a animação do
+confirmar, não um bug. Nos quadros 498-499 só o fundo aparece — é a transição.
+
+**O que falta:** o usuário precisa descrever melhor o sintoma, ou mandar uma
+captura/log do console. "Bugado" pode ser: cor errada, texto trocado, posição
+errada, item faltando, ou animação travada — e cada uma dessas tem causa
+diferente. Sem dado que as distinga, não há diagnóstico. **Perguntar antes de
+mexer no código.**
 
 ---
 

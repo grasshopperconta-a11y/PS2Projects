@@ -27,7 +27,14 @@ lugar.
 
 - **Pasta de entregas:** `1bhBZGS67lWeSzlDxK7TeNdJSc7_Z2VC1`
 - **Pasta de assets (43 arquivos):** `1XEb6Q9tRfOZU5iGjnXfYyxFzpCicYfD3`
-- **ELF 0.2.111 (entregue):** `1MZ4wEki3gQB5Hj9y7HSWE6x56HsnRmB1`
+- **ELF 0.2.112 (entregue, o atual):** `1tWGK7DhGWpbWTXlo3N4fhPQKyVDBXsQp`
+  5.264.808 B, md5 `78bf7f6d4591ae9b73b9bb81516d5486`,
+  sha256 `095a5e0b68a2e34a591ddf57ffcc3415b56f689840e3e2068f3c2301bdf74faa`.
+  **Rebuild byte-idêntico confirmado** (duas compilações limpas, mesmo md5).
+- **ELF 0.2.111 (entregue, superado):** `1MZ4wEki3gQB5Hj9y7HSWE6x56HsnRmB1`
+  5.264.820 B, md5 `facadf7338ad14a6d2dc7f8a713be918`. Diferença de 12 B para a
+  0.2.112 é só a string de versão (`0.2.84-calibracao` vs `0.2.112`); a 0.2.111
+  foi compilada com a versão default do Makefile.
 - **ELF 0.2.110:** `1k0WbjQBOlvPGBRcsssmvh4huwlMEuRXN`
 - **ELF 0.2.109:** `158ACsUScHVnOela2AWYOA3uRg5I3mxfZ`
 - **ELF 0.2.108:** `1tajPzIX2RSX-rBQIKFpIQnWjS5H7qbny`
@@ -177,6 +184,43 @@ D,quadro,i,estado,x,y,w,h,u,v,uw,vh,alfa,vy0,vy1,vy_span,gsx0,gsy0,gsx1,gsy1
 - **Travamento:** onde o log para. O último `P,` com `_BEGIN` sem `_DONE`
   correspondente depois dele.
 
+### ⚠️ Uma rodada por arquivo — e o mapa da linha `S,`
+
+**Desde a 0.2.112 o log trunca.** `telemetry.c:186` abre com
+`O_WRONLY|O_CREAT|O_TRUNC`. Os três despejos de `main.c` (`av_trace_dump`,
+`fnx_congelado2`, `estado_dump`) continuam com `O_APPEND`, porque entram no
+**mesmo** arquivo desta rodada. A regra: **quem abre primeiro trunca, quem entra
+depois acrescenta.**
+
+Antes disso era `O_APPEND` em tudo, e cada boot acumulava no arquivo do
+pendrive. Um log com várias rodadas **não pode ser lido de uma vez** — foi assim
+que nasceram duas conclusões falsas (ver §12). Sempre confira:
+`grep -c "^P,SHUTDOWN" FNF_COLHEITA.txt` — se der mais de 1, separe antes de
+analisar. `tools/analisa_log.py` faz isso sozinho desde a 0.2.112.
+
+**Mapa da linha `S,` (41 campos, `src/telemetry.c:353`):**
+
+```
+S, 1 quadro, 2 ui_state, 3 target_state, 4 selection, 5 story_level,
+  6 story_diff, 7 transition_frame, 8 transitions, 9 transport_state,
+  10 audio_started, 11 audio_playing, 12 menu_audio_suspended, 13 chart_status,
+  14 tutorial_scene_ready, 15 tutorial_audio_status, 16 story_assets_ready,
+  17 menu_cache_ready, 18 title_anim_status, 19 gf_uploaded, 20 bf_uploaded,
+  21 gf16_uploaded, 22 story_gf_uploaded, 23 story_bf_uploaded, 24 aspect_169,
+  25 viewport_360, 26 music_clock, 27 audio_submitted, 28 ring_level,
+  29 underruns, 30 audio_fd, 31 title_audio_fd, 32 note_hits, 33 note_misses,
+  34 note_combo, 35 note_score, 36 note_feedback, 37 event_cursor,
+  38 band_clip_rects, 39 band_clip_lines, 40 band_cull_rects
+```
+
+**O que NÃO está na linha `S,`:** o estado do piscar do menu
+(`g_fl_item_vis`, `g_fl_item_toggles`, `menu_exit_frames`). Ele só sai no
+despejo sob demanda de `dl_sprite()` (`main.c:1095-1107`), na linha
+`phys1:1 ... flick_item_vis=%d toggles=%d flick_mag_vis=%d toggles=%d exit=%d`.
+Consequência: **o log não explica, por si, por que um quadro do estado 6 tem 3
+itens em vez de 4.** Quem lê precisa saber que é o piscar do confirmar
+(16 piscadas, `g_fl_item_left=16`). Está anotado aqui e no analisador.
+
 ### `BOOT.txt` — o marcador que sobrevive
 
 `mass:/FNFPS2/BOOT.txt` (ou `mass:/BOOT.txt` se a pasta não existir). Uma linha,
@@ -253,6 +297,16 @@ quadro em que isso acontecer.
   framebuffer inteiro, XYOFFSET (2048,2048), `PRMODECONT = PRIM_OVERRIDE_DISABLE`.
 - `draw_rect_textured` escreve seu próprio GIF tag e PRIM, então o contexto do
   PRIM sempre casa com o argumento `context` do helper (o projeto passa 0).
+- **O scissor do GS corta de verdade — medido em hardware.** O vértice que sai
+  para o GS passa da faixa por uma fração de linha (ex.: o fundo do menu em
+  `gsy 55.5625..391.5625`, contra a faixa 56..391). Nas 6 capturas RGBA32 da
+  0.2.106 (1.146.880 B cada, 640×448), o conteúdo começa **exatamente** na linha
+  56 e acaba **exatamente** na 391 — 336 linhas, sem sangramento para a 55 nem
+  para a 392. Portanto a fração de linha dos vértices não é defeito, e a
+  checagem disso no `analisa_log.py` é informativa, não um problema.
+  (Observado à parte: 5 das 6 capturas tinham 3 pixels escuros e isolados na
+  **linha 6**, x=256..258 — fora da faixa, no topo. Não sei a causa e não
+  concluo nada a partir daí.)
 
 ### `texrect_t` — layout autoritativo (`ee/draw/include/draw2d.h`)
 
@@ -371,3 +425,22 @@ dorme para sempre — tela preta, e o log cai na raiz em vez de dentro de
   estar velho. Use `git ls-remote origin <branch>` para saber o tip real.
 - **`rm -rf` num diretório de staging apaga documentos que você acabou de
   escrever nele.** Escreva os documentos no repositório, não em `/tmp`.
+- **LI UM LOG COM QUATRO EXECUÇÕES E TIREI DUAS CONCLUSÕES FALSAS.** O
+  `FNF_COLHEITA.txt` era aberto com `O_APPEND`, então um único
+  `test/run_tests.sh` deixava 4 linhas `P,SHUTDOWN` no mesmo arquivo. Li o
+  quadro 364 duas vezes e afirmei que "o menu desenha cada item duas vezes", e
+  que "o menu volta com cara diferente depois do roteiro". As duas são falsas.
+  Um quadro do estado 6 tem 5 sprites (1 fundo + 4 itens), e as 2 visitas ao
+  menu têm exatamente as mesmas 4 posições.
+  **Regra que sai daí: antes de comparar qualquer coisa num log, conte quantas
+  rodadas ele tem (`grep -c SHUTDOWN`). Se for mais de uma, separe.** Corrigido
+  em 0.2.112 (`d2eed51`), e `test/run_tests.sh` agora tem teste que falha se o
+  analisador voltar a errar.
+- **A contagem de sprites por quadro não é medida de nada.** Ela varia de
+  propósito: ao confirmar um item, `menu_flicker_step()` (main.c:856) pisca o
+  item selecionado 16 vezes e some em metade dos quadros. Um quadro com 3 itens
+  em vez de 4 é animação, não bug.
+- **Commitei 25 arquivos gerados (~50 MB) por engano**, porque o `git rm
+  --cached` não cobriu `analisa_duas.txt`. Um arquivo já rastreado **não** é
+  afetado pelo `.gitignore` — `git check-ignore` não o reporta. Confira sempre
+  `git show --name-only HEAD | grep build/` antes de dar push.
