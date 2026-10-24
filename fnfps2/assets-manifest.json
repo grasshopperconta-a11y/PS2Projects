@@ -58,10 +58,10 @@
       "note": "the tutorial's instrumental and vocals"
     },
     "menu_cache.rle": {
-      "drive_id": "1p4gBOaOrUytU85MVt0VPwOEqip69OzWt",
-      "bytes": 1623445,
+      "drive_id": "1G6hpFcI8u2i7Ig0-z2cQMgb8QOezU91E",
+      "bytes": 1587561,
       "required": true,
-      "note": "the menu's pre-rendered frames, RLE"
+      "note": "o menu's pre-rendered frames, RLE. ATENCAO: a copia anterior no Drive (id 1p4gBOaOrUytU85MVt0VPwOEqip69OzWt, 1623445 B, hoje na lixeira) tinha o bloco 4 -- os titulos do modo historia -- de outra versao, e desenhava os  nomes das semanas com a fonte errada. O arquivo certo tem exatamente PRELOAD_RLE_BYTES = 1288182+38342+72402+188635 = 1587561 bytes, e o bloco 4 decodifica 188635 -> 306180. tools/build_pendrive.sh regenera e VERIFICA esse tamanho em todo build, entao um arquivo velho nao passa silenciosamente."
     },
     "title_alphabet.rgba": {
       "drive_id": "1ln2VQmm9sLfjbp_iI9L4LsM9dhymulQz",

@@ -27,6 +27,12 @@ lugar.
 
 - **Pasta de entregas:** `1bhBZGS67lWeSzlDxK7TeNdJSc7_Z2VC1`
 - **Pasta de assets (43 arquivos):** `1XEb6Q9tRfOZU5iGjnXfYyxFzpCicYfD3`
+- **Pendrive 0.2.112 (ZIP completo, 47.488.753 B, 400 arquivos):**
+  `1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf` — descompacte **direto na raiz** do
+  pendrive. Traz `FNF_PS2.ELF` + `FNFPS2/assets/` com os 16 assets e os 81
+  charts nos 4 layouts + `LEIA-ME.txt`.
+- **`menu_cache.rle` corrigido (1.587.561 B):**
+  `1G6hpFcI8u2i7Ig0-z2cQMgb8QOezU91E` — ver §11.
 - **ELF 0.2.112 (entregue, o atual):** `1tWGK7DhGWpbWTXlo3N4fhPQKyVDBXsQp`
   5.264.808 B, md5 `78bf7f6d4591ae9b73b9bb81516d5486`,
   sha256 `095a5e0b68a2e34a591ddf57ffcc3415b56f689840e3e2068f3c2301bdf74faa`.
@@ -423,7 +429,50 @@ esticamento de 2,54%, o menu com cara diferente e o sprite fora da faixa.
 
 ---
 
-## 11. Layout do pendrive (o jogo exige)
+### ⚠️ O `menu_cache.rle` do Drive estava VELHO — e o sintoma era a fonte errada
+
+**Descoberta em 0.2.112, ao montar o pendrive.** O `build_pendrive.sh` avisa
+quando o `menu_cache.rle` não tem 1.587.561 bytes. A cópia do Drive tinha
+**1.623.445**. A causa, medida por `tools/fix_menu_cache_block4.py`:
+
+| bloco | offset | comprimido | decodificado | estado |
+|---|---|---|---|---|
+| menu | 0 | 1.288.182 B | 2.961.848 B | OK, preservado |
+| fonte | 1.288.182 | 38.342 B | 294.912 B | OK, preservado |
+| story ui | 1.326.524 | 72.402 B | 524.288 B | OK, preservado |
+| **story títulos** | 1.398.926 | **224.519 B → 379.264 B** | | **VELHO** |
+| story títulos (certo) | 1.398.926 | **188.635 B → 306.180 B** | | regerado |
+
+Os três primeiros blocos decodificam perfeito; só o quarto — o que desenha os
+**9 nomes das semanas do modo história** — era de outra versão. É exatamente o
+sintoma que o usuário reportou como *"os botões do modo história usam uma fonte
+diferente"*, que estava marcado como "corrigido no asset". **A correção existia
+na ferramenta, mas nunca tinha sido aplicada ao arquivo do Drive** — o
+comentário do `build_pendrive.sh` afirmava que "a cópia do Drive já é a
+corrigida", e essa afirmação era **falsa**. O tamanho do arquivo prova.
+
+**O número que decide:** o jogo lê exatamente
+`PRELOAD_RLE_BYTES = MENU_RLE_BYTES + FONT_RLE_BYTES + STORY_RLE_BYTES +
+STORY_TITLES_RLE_BYTES = 1.288.182 + 38.342 + 72.402 + 188.635 =
+**1.587.561 bytes**`. Um arquivo maior não falha na leitura — falha depois,
+dentro de `story_titles_restore()`. Por isso o sintoma aparecia só no modo
+história, e só na tela dos nomes das semanas.
+
+**Corrigido, e à prova de recorrência:**
+- `tools/build_pendrive.sh` agora **regenera e verifica** o bloco 4 em todo
+  build, e ainda decodifica o bloco 4 para confirmar que fecha em
+  188.635 → 306.180. Um arquivo velho não passa mais silenciosamente.
+- O Drive foi trocado: id novo **`1G6hpFcI8u2i7Ig0-z2cQMgb8QOezU91E`**
+  (1.587.561 B, sha256 `cd27d719…d351`), o velho
+  (`1p4gBOaOrUytU85MVt0VPwOEqip69OzWt`) foi para a lixeira. Upload verificado
+  byte a byte por re-download.
+- `assets-manifest.json` aponta para o novo id e carrega o aviso.
+
+**A lição:** um AVISO num script não é uma correção. Eu ignorei esse aviso por
+várias sessões e entreguei pendrive com o bug. Verificação que não **impede** o
+build não é verificação.
+
+### Layout do pendrive (o jogo exige)
 
 ```
 mass:/FNFPS2/assets/...          -> assets na raiz do pendrive

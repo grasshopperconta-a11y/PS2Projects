@@ -19,9 +19,10 @@ rm -rf "$OUT"
 mkdir -p "$OUT/FNFPS2/assets/songs"
 
 echo "== copiando os 16 assets de runtime =="
+# menu_cache.rle entra depois, pela secao de correcao -- nao aqui.
 for f in title_alphabet.rgba title_prompt_l.rgba title_prompt_r.rgba \
          title_logoBumpin.frames title_gfDanceTitle.frames title_newgrounds.rgba \
-         font.rgba font.widths menu_sfx.pcm menu_cache.rle \
+         font.rgba font.widths menu_sfx.pcm \
          bf_frames.lz4f gf_frames.lz4f \
          mainstage_tutorial_parallax.rgba \
          tutorial_hud_official_320x256_gsalpha.rgba \
@@ -33,31 +34,64 @@ for f in title_alphabet.rgba title_prompt_l.rgba title_prompt_r.rgba \
     cp "$ASSETS/$f" "$OUT/FNFPS2/assets/$f"
 done
 
-# menu_cache.rle corrigido.
-# A copia do Drive JA eh a corrigida: tools/fix_menu_cache_block4.py reconstruiu
-# so o bloco 4 (story titulos, que precisa da fonte VCR) e preservou os blocos
-# 1 a 3 byte a byte. O /tmp/mc_fixed.rle que era copiado aqui era de uma
-# rodada anterior da ferramenta e ficou velho -- copiar de /tmp entregava o
-# bloco 4 antigo no pendrive mesmo com a raiz de assets certa. Agora a fonte
-# unica eh a raiz de assets, e ela eh verificada antes de seguir.
-if [ ! -f "$ASSETS/menu_cache.rle" ]; then
-    echo "FALTA $ASSETS/menu_cache.rle" >&2
-    exit 1
-fi
-WANT=$(python3 - <<'EOF'
-import struct
-# PRELOAD_RLE_BYTES: o main.c le exatamente esse tanto e ignora o resto, entao
-# um arquivo maior nao falha aqui -- falha depois, dentro de story_titles_restore.
-print(1587561)
-EOF
-)
-HAVE=$(wc -c < "$ASSETS/menu_cache.rle")
-if [ "$HAVE" != "$WANT" ]; then
-    echo "   AVISO: menu_cache.rle tem $HAVE bytes, esperado $WANT" >&2
-    echo "           (bloco 4 dos story titulos pode estar na versao errada)" >&2
+# menu_cache.rle -- a copia do Drive PODE estar velha, e isso jah aconteceu.
+#
+# Medicao que prova: o arquivo do Drive tem 1.623.445 bytes, mas o jogo le
+# exatamente PRELOAD_RLE_BYTES = MENU_RLE+FONT+STORY+ST_TITLES =
+# 1.288.182+38.342+72.402+188.635 = 1.587.561. A copia do Drive tem o bloco 4
+# (story titulos) de outra versao: 224.519 B de origem para 379.264 B de
+# destino, onde o jogo espera 188.635 para 306.180. Os tres primeiros blocos
+# decodificam perfeito -- so o quarto estah velho, e eh justamente o que
+# desenha os nomes das semanas do modo historia com a fonte errada.
+#
+# Portanto: nao confiar na copia do Drive. A correcao eh deterministica e jah
+# validada (tools/fix_menu_cache_block4.py preserva os blocos 1 a 3 byte a
+# byte e regera so o 4 com a fonte VCR real), entao ela eh APLICADA aqui, em
+# todo build. Um AVISO nao basta: eu ignoraria o aviso e entregaria o pendrive
+# com o bug da fonte.
+WANT=1587561
+MC="$ASSETS/menu_cache.rle"
+[ -f "$MC" ] || { echo "FALTA $MC" >&2; exit 1; }
+HAVE=$(wc -c < "$MC")
+FIXED="$OUT/FNFPS2/assets/menu_cache.rle"
+mkdir -p "$(dirname "$FIXED")"
+if [ "$HAVE" = "$WANT" ]; then
+    echo "   menu_cache.rle: $HAVE bytes, jah eh a versao corrigida"
+    cp "$MC" "$FIXED"
 else
-    echo "   menu_cache.rle: $HAVE bytes, versao corrigida (bloco 4 story titulos)"
+    echo "   menu_cache.rle: $HAVE bytes != $WANT -- bloco 4 velho, regerando"
+    python3 tools/fix_menu_cache_block4.py "$ASSETS" "$FIXED" >&2 || {
+        echo "FALHOU a regeneracao do bloco 4" >&2; exit 1; }
+    NEW=$(wc -c < "$FIXED")
+    [ "$NEW" = "$WANT" ] || {
+        echo "FALHOU: gerei $NEW bytes, esperado $WANT" >&2; exit 1; }
+    echo "   menu_cache.rle regerado: $NEW bytes (blocos 1-3 preservados)"
 fi
+# e o bloco 4 tem de decodificar no tamanho que story_titles_restore() espera
+python3 - "$FIXED" <<'PY' || exit 1
+import sys, os
+MENU_RLE, FONT_RLE, STORY_RLE, ST_RLE = 1288182, 38342, 72402, 188635
+ST_RAW = 306180
+p = sys.argv[1]
+d = open(p, "rb").read()
+off = MENU_RLE + FONT_RLE + STORY_RLE
+if len(d) < off + ST_RLE:
+    print("arquivo curto: %d < %d" % (len(d), off + ST_RLE)); sys.exit(1)
+blk = d[off:off + ST_RLE]
+si = di = 0
+while si < len(blk) and di < ST_RAW:
+    c = blk[si]; si += 1
+    if c < 128:
+        n = (c + 1) * 4; di += n; si += n
+    elif c > 128:
+        di += (257 - c) * 4; si += 4
+    else:
+        print("token 128 no bloco 4"); sys.exit(1)
+if si != len(blk) or di != ST_RAW:
+    print("bloco 4 nao fechou: si=%d/%d di=%d/%d" % (si, len(blk), di, ST_RAW))
+    sys.exit(1)
+print("   bloco 4 (story titulos): %d B -> %d B, fecha exato" % (ST_RLE, ST_RAW))
+PY
 
 echo "== copiando os charts =="
 # O jogo tenta QUATRO caminhos, em ordem (sr_chart_layout_count()):
@@ -119,8 +153,10 @@ FNF PS2 -- COMO INSTALAR
    (o jogo tenta os dois lugares; se a pasta FNFPS2 nao estiver
    na raiz, ele escreve na raiz.)
 
-   O log cresce a cada partida -- ele eh somado, nao substituido.
-   Para uma colheita limpa, apague o FNF_COLHEITA.txt antes de testar.
+   Desde a versao 0.2.112 o log eh SUBSTITUIDO a cada partida: uma execucao,
+   um arquivo. Nao precisa mais apagar nada antes de testar -- e se o arquivo
+   vier com conteudo de varias execucoes, a versao do ELF eh anterior a
+   0.2.112 e o log nao pode ser lido de uma vez so.
 
 O log tem uma linha por sprite por quadro, com a geometria ja recortada.
 Com ele da para ver, sem voce descrever nada: sprite fora da faixa visivel,
