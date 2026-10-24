@@ -164,7 +164,26 @@ static void log_try_open(int *path_index)
         int t;
         int tentativas = (i == 0) ? 50 : 5;
         for (t = 0; t < tentativas; ++t) {
-            log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_APPEND, 0666);
+            /* O_TRUNC, nao O_APPEND. Este eh o PRIMEIRO escritor do arquivo
+               unico (os tres despejos de main.c -- av_trace_dump,
+               fnx_congelado2 e estado_dump -- abrem com O_APPEND de proposito,
+               porque entram no MESMO arquivo desta rodada; ver o comentario em
+               main.c, logo depois do telemetry_init).
+
+               Com O_APPEND aqui, cada inicializacao do jogo acumulava no
+               FNF_COLHEITA.txt que ja estava no pendrive. A consequencia foi
+               medida: depois de um unico test/run_tests.sh o arquivo tinha
+               QUATRO linhas "P,SHUTDOWN", e o quadro 364 aparecia duas vezes
+               (linhas 3173-3177 e 20025-20029 do log). Eu li aquilo como "o
+               menu desenha cada item duas vezes" e cheguei a escrever essa
+               conclusao no handoff. Segmentando o arquivo por rodada, o quadro
+               364 tem exatamente 5 sprites -- 1 fundo e 4 itens. A duplicacao
+               nao existe; era o mesmo quadro de duas execucoes diferentes.
+
+               Uma rodada, um log. O BOOT.txt do main.c jah truncava; os dois
+               escritores divergiam. O custo eh o mesmo: mesmo open(), mesmo
+               caminho, mesmo numero de escritas -- so a bandeira muda. */
+            log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_TRUNC, 0666);
             if (log_fd >= 0) { *path_index = i; break; }
             DelayThread(100000);
         }

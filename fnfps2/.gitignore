@@ -28,4 +28,10 @@ build/fnf_harness_asan
 build/harness*.log
 build/harness_cc.log
 build/harness_assets/
+# Raiz propria do teste do analisador (test/run_tests.sh): assets sinteticos
+# gerados pelo gen_harness_assets.py, mais o log que o harness escreve nela.
+# Sao saida de teste, regeneraveis, e nao fazem parte do projeto.
+build/analisa_assets/
+build/analisa_*.txt
+build/analisa_*.out
 build/FNF_PS2.ELF

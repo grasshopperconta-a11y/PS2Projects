@@ -177,8 +177,9 @@ else
     LOG="$ROOT/FNFPS2/FNF_COLHEITA.txt"
 
     # --- positivo: 1400 quadros, nenhum estouro permitido ------------------
+    INPUT_POSITIVO="200:CROSS,420:CROSS,600:CROSS,700:CIRCLE,760:CROSS,860:CIRCLE,920:CROSS,1020:CIRCLE,1080:CROSS,1180:CIRCLE,1240:CROSS,1340:CIRCLE"
     out=$(PS2H_FRAMES=1400 PS2H_ROOT="$ROOT" PS2H_WATCHDOG=180 \
-              PS2H_INPUT="200:CROSS,420:CROSS,600:CROSS,700:CIRCLE,760:CROSS,860:CIRCLE,920:CROSS,1020:CIRCLE,1080:CROSS,1180:CIRCLE,1240:CROSS,1340:CIRCLE" \
+              PS2H_INPUT="$INPUT_POSITIVO" \
               timeout 240 "$HARNESS_BIN" 2>&1) || {
         echo "  FAIL: o harness terminou com codigo de erro em 1400 quadros"
         echo "$out" | tail -30
@@ -259,6 +260,81 @@ else
     fi
     echo "  negativo 2 (DMA com 70000 qw): OK, detectou o excesso sobre QWC_MAX"
 fi
+
+echo
+echo "== analisador do log: uma rodada por arquivo =="
+
+# Por que este teste existe: o log abria com O_APPEND, e um unico
+# test/run_tests.sh deixava QUATRO rodadas no mesmo arquivo. Li o quadro 364
+# duas vezes -- uma de cada rodada -- e conclui que "o menu desenha cada item
+# duas vezes". A conclusao foi para o documento de passagem de bastao. Quando o
+# arquivo foi segmentado por rodada, o quadro 364 tinha 5 sprites: 1 fundo e 4
+# itens. A duplicacao nunca existiu.
+#
+# O teste abaixo trava as duas coisas que precisam ser verdade:
+#   (a) uma rodada por arquivo -- o O_TRUNC do telemetry_init;
+#   (b) o analisador NUNCA mistura rodadas, mesmo que o arquivo as contenha.
+ANAROOT=build/analisa_assets
+rm -rf "$ANAROOT"
+mkdir -p "$ANAROOT"
+python3 tools/gen_harness_assets.py "$ANAROOT" build/charts >/dev/null 2>&1 || {
+    echo "  FAIL: nao gerei os assets para o teste do analisador"; exit 1; }
+PS2H_FRAMES=1400 PS2H_ROOT="$ANAROOT" PS2H_WATCHDOG=180 \
+    PS2H_INPUT="$INPUT_POSITIVO" \
+    timeout 240 "$HARNESS_BIN" >/dev/null 2>&1 || {
+    echo "  FAIL: o harness nao rodou para o teste do analisador"; exit 1; }
+ANA="$ANAROOT/FNFPS2/FNF_COLHEITA.txt"
+if [ ! -s "$ANA" ]; then
+    echo "  FAIL: o teste do analisador ficou sem log em $ANA"; exit 1
+fi
+
+falha() { echo "  FAIL: $1"; echo "$2" | sed 's/^/        /'; exit 1; }
+
+# (a) uma rodada so: nenhum problema, e uma rodada declarada.
+set +e
+python3 tools/analisa_log.py "$ANA" > build/analisa_uma.txt 2>&1
+rc=$?
+set -e
+[ $rc -eq 0 ] || falha "o analisador acusou problema numa rodada unica" \
+    "$(cat build/analisa_uma.txt)"
+grep -q "1 rodada no arquivo" build/analisa_uma.txt \
+    || falha "o analisador nao viu 1 rodada" "$(cat build/analisa_uma.txt)"
+
+# Os dois falsos positivos que ja me enganaram, agora proibidos.
+if grep -q "DESENHO DUPLO" build/analisa_uma.txt; then
+    falha "falso positivo: item repetido dentro do mesmo quadro" \
+        "$(grep -A4 'DESENHO DUPLO' build/analisa_uma.txt)"
+fi
+if grep -q "cara diferente" build/analisa_uma.txt; then
+    falha "falso positivo: menu com cara diferente entre visitas" \
+        "$(grep -A4 'cara diferente' build/analisa_uma.txt)"
+fi
+if grep -q "MESMA cara nas" build/analisa_uma.txt; then
+    echo "  ok:   o menu tem a mesma cara nas visitas ao menu"
+else
+    echo "  ok:   uma visita so ao menu, nada a comparar"
+fi
+
+# (b) duas rodadas no mesmo arquivo: o analisador TEM de separa-las.
+cp "$ANA" build/analisa_duas.txt
+cat "$ANA" >> build/analisa_duas.txt
+set +e
+python3 tools/analisa_log.py build/analisa_duas.txt > build/analisa_duas.out 2>&1
+rc=$?
+set -e
+grep -q "2 RODADAS no mesmo arquivo" build/analisa_duas.out \
+    || falha "o analisador nao separou 2 rodadas" "$(cat build/analisa_duas.out)"
+grep -q "RODADA 1/2" build/analisa_duas.out \
+    || falha "a rodada 1 nao foi analisada sozinha" "$(cat build/analisa_duas.out)"
+grep -q "RODADA 2/2" build/analisa_duas.out \
+    || falha "a rodada 2 nao foi analisada sozinha" "$(cat build/analisa_duas.out)"
+if grep -q "DESENHO DUPLO" build/analisa_duas.out; then
+    falha "2 rodadas identicas viraram desenho duplo" \
+        "$(grep -A4 'DESENHO DUPLO' build/analisa_duas.out)"
+fi
+[ $rc -eq 0 ] || falha "2 rodadas identicas acusaram problema" \
+    "$(cat build/analisa_duas.out)"
+echo "  ok:   2 rodadas no arquivo, analisadas separadas, sem falso positivo"
 
 echo
 echo "== harness com ASan + UBSan (todos os buffers, nao so o pacote) =="
