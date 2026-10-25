@@ -3,8 +3,8 @@
 # Este arquivo eh o canal. EU escrevo aqui; o programa no seu PC le.
 #
 # Formato: uma linha por comando, <id>|<comando>
-#   - id eh um numero que so cresce. O programa executa cada linha
-#     UMA vez so, e guarda qual foi o ultimo id que rodou.
+#   - id eh um numero inteiro >= 1 que so cresce. O programa executa cada
+#     linha UMA vez so, e guarda qual foi o ultimo id que rodou.
 #   - linhas comecando com # e linhas vazias sao ignoradas.
 #   - prefixo CMD: manda para o Prompt de Comando; o resto vai para
 #     o PowerShell.
@@ -12,3 +12,7 @@
 # Exemplo:
 # 1|Get-Volume
 # 2|CMD: dir E:\
+
+# --- comandos ativos abaixo desta linha ---
+
+1|Get-Volume
