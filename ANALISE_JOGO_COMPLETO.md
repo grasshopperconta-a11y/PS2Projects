@@ -363,3 +363,107 @@ O trabalho não foi perdido: os 12 commits estão no remoto, e o reset local par
 `origin/arena/4c50659b-ps2projects` restaurou tudo. Para voltar a buildar para
 PS2 é preciso reobter `PS2DEV_EE_MIN_FNF.tar.xz` em `google_drive/` (o
 `assets-manifest.json` documenta a pasta e os ids de onde vêm os assets).
+
+---
+
+## 8. A medição que decide o port (adendo 2)
+
+Esta seção responde, com dados reais de `assets-data/`, à pergunta que a seção
+7 deixou em aberto: **quantas texturas vivas uma música precisa, e quanto de
+VRAM elas custam.**
+
+### 8.1 Os 21 palcos, medidos
+
+Cada palco tem `props` (camadas de fundo, público, fumaça, carros) e 3
+personagens. Contando props + personagens + 4 setas + 6 elementos de HUD:
+
+| Palco | props | chars | texturas vivas |
+|---|---|---|---|
+| tankmanBattlefield | 18 | 3 | **31** |
+| phillyStreetsErect | 15 | 3 | 28 |
+| sserafim | 15 | 3 | 28 |
+| phillyStreets | 14 | 3 | 27 |
+| limoRideErect / mainStageErect | 10 | 3 | 23 |
+| mainStage | 3 | 3 | 16 |
+| spookyMansion | 1 | 3 | 14 |
+| **média** | 8,0 | 3 | **21,0** |
+
+O port hoje tem **5 texturas fixas** (`tex`, `tex2`, `gftex`, `stagetex`,
+`fonttex`). O pior caso pede 31. **São 6,2× mais slots do que existem.**
+
+### 8.2 O custo em VRAM, com as dimensões reais
+
+`assets-data/stage-image-sizes.json` tem as dimensões reais de cada imagem.
+Contando `w × h × 4` (PSMCT32) e quebrando na largura em tiles de 1024 px —
+o limite de textura do GS:
+
+| Palco | VRAM dos props | vs. 4 MB |
+|---|---|---|
+| limoRideErect | 1.619.192.832 | **386×** |
+| mallXmasErect | 1.370.250.912 | 327× |
+| sserafim | 1.294.190.624 | 309× |
+| tankmanBattlefield | 1.247.157.856 | 297× |
+| mainStage | 276.971.520 | 66× |
+| spookyMansion | 283.281.408 | 68× |
+
+**Nenhum palco cabe em resolução nativa.** O melhor caso ainda é 66× a VRAM
+inteira. A diferença é de três ordens de magnitude — não é ajuste, é
+reengenharia de asset.
+
+### 8.3 Slot não é byte — e isso importa
+
+`limoRideErect` tem 5 sprites apontando para **o mesmo atlas**
+(`limo/henchmen`, 2048×2048): 5 slots, 1 textura. `mainStage` tem 3 props e 3
+personagens, todos distintos.
+
+Ou seja: **contagem de slots e contagem de bytes são problemas diferentes**, e
+o `vram_cache.c` resolve o primeiro (despejo por LRU por chave) mas não o
+segundo.
+
+### 8.4 Quanto sobra por textura
+
+| Framebuffers | Sobra p/ texturas | tankman (31) | mainStage (16) | school (21) |
+|---|---|---|---|---|
+| 640×448 PSM_32 (atual) | 1.900.544 B | 61.307 B = 247×247 | 118.784 B = 344×344 | 90.502 B = 300×300 |
+| 512×384 PSM_16 | 3.407.872 B | 109.931 B = 331×331 | 212.992 B = 461×461 | 162.279 B = 402×402 |
+
+Texturas de ~250-330 px de lado. É o tamanho típico de jogo de PS2 — **cabe**,
+mas exige que os atlas de 4096×4096 sejam **fatiados por quadro de animação e
+reduzidos em tempo de build**, não enviados inteiros.
+
+### 8.5 A conclusão, e o que ela corrige
+
+A intuição de que "resolução menor ajuda" está **metade certa**:
+
+- **Resolução de tela** ajuda pouco: de 640×448 PSM_32 para 512×384 PSM_16
+  quase dobra a VRAM de textura (1,9 → 3,4 MB). É ganho real, mas de 1,8×.
+- **Resolução de textura** é o que decide: o gargalo são os atlas de 4096²,
+  que precisam virar tiles de ~256 px por quadro de animação.
+
+E o gargalo de **contagem** (31 vs 5 slots) é independente dos dois — resolve-se
+com o `vram_cache.c`, que já existe e já está provado.
+
+Portanto a arquitetura correta tem **três** peças, não uma:
+
+1. **Fatiar e reduzir os atlas em tempo de build** — extrair quadro por quadro,
+   limitar a 256-512 px, gerar pack por palco. É aí que os 386× encontram o
+   1,9-3,4 MB disponível.
+2. **Gerenciar slots com `vram_cache.c`** — despejo por LRU, que é o que
+   permite 31 texturas vivas em 4 MB.
+3. **Carregar/descarregar por estado** — a seção 7, que já é o modelo certo e
+   hoje está quebrado nos dois pontos medidos lá.
+
+### 8.6 O plano revisto de novo
+
+| Fase | Item | Portão |
+|---|---|---|
+| 0 | Travamento no console | `BOOT.txt` localizando a parada |
+| 1 | Packs do `.incbin` → pendrive | ELF encolhe 2.929.792 B; harness passa |
+| 2 | **Fatiar atlas em build** | pack por palco ≤ orçamento medido em 8.4 |
+| 3 | **Ligar `vram_cache.c` no `main.c`** | teste: alocar 31 slots, estourar, despejar, realocar |
+| 4 | Estado de gameplay genérico | `bopeebo-hard` do início ao fim no harness |
+| 5 | Scoring, health, miss, combo, accuracy, judgement, rating, results | chart conhecido + entrada scriptada |
+| 6 | Song select, pausa, resultados, transições | título → semana → música → results |
+
+A Fase 2 é nova e é a que a medição obrigou: sem ela, nenhuma das outras
+importa, porque **não existe palco do jogo que caiba na VRAM do PS2**.
