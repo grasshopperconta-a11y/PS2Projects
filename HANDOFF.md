@@ -96,11 +96,18 @@ harness. Tem de ser o console.
 ## 4. Layout do pendrive
 
 ```
+mass:/FNF_PS2.ELF             <- na RAIZ, com este nome EXATO
 mass:/FNFPS2/assets/...       <- na RAIZ do pendrive, obrigatoriamente
-mass:/FNFPS2/FNF_PS2.ELF
 mass:/FNFPS2/FNF_COLHEITA.txt <- criado pelo jogo
 mass:/FNFPS2/BOOT.txt         <- criado pelo jogo
 ```
+
+**O ELF fica na RAIZ e chama `FNF_PS2.ELF` — não `FNF_PS2_0.2.112.ELF`.** O
+`build_pendrive.sh` (linha 124) faz `cp build/FNF_PS2.ELF "$OUT/FNF_PS2.ELF"`, e
+o `LEIA-ME.txt` manda rodar `FNF_PS2.ELF` pelo lançador. Um nome diferente
+(como `FNF_PS2_0.2.112.ELF`, que foi o que o canal #50 acabou colocando em
+`F:\`) faz o lançador não achar o executável: o jogo nunca sobe e
+`FNF_COLHEITA.txt`/`BOOT.txt` nunca aparecem.
 
 Se a pasta `FNFPS2` não estiver na raiz, o jogo dorme para sempre em
 `SleepThread()` e o log aparece no lugar errado. O ZIP de entrega já traz

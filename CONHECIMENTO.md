@@ -121,10 +121,19 @@ rodar `run_tests.sh` sobre uma correção de E/S, você está inventando.
 ### NÃO resolvido (o usuário testou e confirmou em hardware)
 
 1. **Linha estranha abaixo dos botões animados do menu principal.** Sintoma
-   recorrente. **Descoberta do log:** o menu desenha **cada item 2× por quadro**
-   (duas passagens completas, ordem 1,2,3,4 / 1,2,3,4). No FNF original cada
-   item é desenhado uma vez. Isso dobra o alpha e dobra as chamadas de desenho.
-   **Ainda não corrigido.**
+   recorrente. **Ainda não corrigido — é o último defeito aberto.**
+   **A hipótese anterior do log foi DESCARTADA:** a afirmação de que "o menu
+   desenha cada item 2× por quadro" está errada. A medição corsta é: o quadro
+   364 tem **5 sprites** (1 fundo + 4 itens), não 8; e há **2 visitas ao menu**,
+   ambas com as mesmas posições `[(94,81),(181,57),(255,58),(332,52)]` — a
+   repetição era o *mesmo* quadro lido duas vezes por culpa do `O_APPEND`
+   (ver §8), não um desenho duplicado.
+   **Já afastado (não é a causa):** geometria limpa (545 itens, escala
+   `h/vh` = 1.0, posições inteiras, `vy_span == h`); o quad GS 1 px maior é o
+   ps2sdk oficial (`START_OFFSET 2047.5625f`, `END_OFFSET 2048.5625f`);
+   descontinuidade máxima de alfa local no atlas = **12,1/128 (9%)** em 60
+   quadros. **Falta o log de colheita** em `mass:/FNFPS2/FNF_COLHEITA.txt`
+   (ver §6).
 2. **Itens do menu quebrados ao voltar do modo história.** Sintoma recorrente.
 3. **Fundo do menu esticando em vez de rolar.** ✅ **CORRIGIDO** — ver §7.
 4. **Travamento ao entrar no modo história.** Não reproduzido no harness.
@@ -147,6 +156,32 @@ foi dita**. A sequência real:
 **A lição que virou regra:** o sintoma "não abriu" tem seis significados
 possíveis. Sem dado que os distinga, a build seguinte serve para **coletar**
 dado, nunca para tentar um conserto.
+
+### O pendrive em `F:` — conferido item por item (2026-10-25)
+
+Auditado por comandos remotos no PC do usuário (`canal/` #50, #53, #54, #55):
+
+| Item | Estado |
+|---|---|
+| `F:\FNFPS2\` | ✅ copiada, **340 arquivos** |
+| charts em `F:\FNFPS2\assets` | ✅ **324** = 81 charts × 4 layouts de nome — é a contagem correta |
+| assets soltos em `assets` | ✅ **16** |
+| `menu_cache.rle` | ✅ **1.587.561 B**, sha256 `cd27d719…d351` **confere** — bloco 4 é a versão corrigida |
+| ELF | ⚠️ 5.264.808 B, mas estava com o **nome errado**; corrigido para `F:\FNF_PS2.ELF` |
+| `F:\FNF_PS2_PENDRIVE.zip` | ⚠️ havia uma cópia **truncada de 2.475 B** na raiz — removida |
+| `FNF_COLHEITA.txt` / `BOOT.txt` | ⏸️ ainda inexistentes: **o jogo nunca rodou deste pendrive** |
+
+**Erro que não se repete:** o canal #50 copiou o ELF para `F:\FNF_PS2_0.2.112.ELF`.
+O nome tem de ser **exatamente** `FNF_PS2.ELF` na raiz (ver §4 do HANDOFF).
+Com o nome errado o lançador não acha o executável — e o sintoma é
+indistinguível de "o jogo não abriu".
+
+**Erro que não se repete (hash):** o canal #53 comparou um **MD5** contra um
+**SHA-256** de 64 dígitos. Os dois "não bateram" e a conclusão parecia ser
+"o arquivo está velho". O tamanho (1.587.561 B) já batia e o SHA-256 de
+verdade bateu — a comparação estava errada, não o arquivo. **Antes de concluir
+que um arquivo difere, confira que os dois lados da comparação são o mesmo
+algoritmo.**
 
 ---
 
