@@ -10,34 +10,41 @@
 #   - prefixo PS:  manda para o PowerShell
 #   - sem prefixo:  PowerShell
 #
-# Exemplo:
-# 1|Get-Volume
-# 2|CMD: dir E:\
+# Aspas simples de proposito: aspas duplas dentro de um -Command que jah vem
+# entre aspas confundem o parser.
 
 # --- comandos ativos abaixo desta linha ---
 
 1|Get-Volume
-
-# --- lote 1: diagnostico do pendrive F: ---
-# Resultado do #2: F:\ tem FNF_PS2_0.2.112.ELF (5.264.808 B, correto) mas NAO
-# tem a pasta FNFPS2. Eh por isso que o jogo dah tela preta: sem asset nenhum.
-
 2|CMD: dir F:\
 3|CMD: dir F:\FNFPS2
 4|CMD: dir F:\FNFPS2\assets
 5|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
 6|CMD: dir /s /b F:\FNF_COLHEITA.txt
 7|CMD: dir /s /b F:\BOOT.txt
-
-# --- lote 2: consertar o pendrive ---
-# Acha o ZIP do pendrive na pasta Downloads e extrai DIRETO NA RAIZ do F:.
-# O ZIP tem FNFPS2/, FNF_PS2.ELF e LEIA-ME.txt na raiz, entao extrair em F:\
-# dah exatamente F:\FNFPS2 -- que eh o que o jogo exige.
-#
-# Uso aspas simples de proposito: aspas duplas dentro de um -Command que jah
-# vem entre aspas confundem o parser.
 8|PS: $z = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -Filter FNF_PS2_0.2.112_PENDRIVE.zip -ErrorAction SilentlyContinue | Select-Object -First 1; if ($z) { Expand-Archive -Path $z.FullName -DestinationPath F:\ -Force; 'EXTRAIDO de: ' + $z.FullName } else { 'ZIP do pendrive NAO encontrado em Downloads' }
 
-# --- lote 3: provar que consertou ---
-9|CMD: dir F:\FNFPS2
-10|CMD: dir F:\FNFPS2\assets
+# --- lote 4: baixar o pendrive DIRETO do Drive ---
+# O #8 falhou porque o ZIP nao estava mais em Downloads. Em vez de pedir para
+# voce baixar de novo, eu baixo: o arquivo eh publico para leitura, entao o
+# Invoke-WebRequest consegue pegar sem login.
+#
+# BITS primeiro (mais rapido e mais resistente em arquivo grande), com
+# Invoke-WebRequest como reserva. Os dois sobrescrevem o destino.
+11|PS: $ProgressPreference='SilentlyContinue'; $u='https://drive.google.com/uc?export=download&confirm=t&id=1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf'; $o='F:\FNF_PS2_PENDRIVE.zip'; try { Start-BitsTransfer -Source $u -Destination $o -ErrorAction Stop; 'via BITS' } catch { Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing; 'via Invoke-WebRequest' }; 'tamanho: '+(Get-Item $o).Length
+
+# --- lote 5: provar que o arquivo baixado eh um ZIP de verdade ---
+# Se o Drive tiver devolvido uma pagina HTML no lugar do arquivo, o tamanho
+# vai vir pequeno e a assinatura nao eh 'PK'. Assinatura de ZIP eh PK\003\004.
+12|PS: $f=[IO.File]::OpenRead('F:\FNF_PS2_PENDRIVE.zip'); $b=New-Object byte[] 2; $null=$f.Read($b,0,2); $f.Close(); 'magic: '+[Text.Encoding]::ASCII.GetString($b)+'  tamanho: '+(Get-Item 'F:\FNF_PS2_PENDRIVE.zip').Length+'  (esperado 47488753)'
+
+# --- lote 6: extrair na RAIZ do F: ---
+# O ZIP tem FNFPS2/, FNF_PS2.ELF e LEIA-ME.txt na raiz, entao extrair em F:\
+# cria exatamente F:\FNFPS2 -- que eh o que o jogo exige. Sem isso ele dah
+# tela preta e nao escreve log.
+13|PS: Expand-Archive -Path 'F:\FNF_PS2_PENDRIVE.zip' -DestinationPath 'F:\' -Force; 'extraido para F:\'
+
+# --- lote 7: provar que consertou ---
+14|CMD: dir F:\FNFPS2
+15|CMD: dir F:\FNFPS2\assets
+16|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
