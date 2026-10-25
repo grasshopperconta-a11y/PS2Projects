@@ -244,6 +244,69 @@ else
     fi
 fi
 
+echo "== robustez: o cliente nao pode travar nem morrer =="
+# Dois defeitos reais, os dois entregues ao usuario:
+#
+#  1. stdout vazia -> Get-Content -Raw devolve $null -> GetByteCount estoura
+#     ArgumentNullException. Aconteceu no comando #4 (dir de pasta inexistete:
+#     o cmd escreve o erro no stderr e nao escreve nada na stdout).
+#
+#  2. pior: o marca-como-rodado ficava no FIM do bloco. A excecao estourou
+#     antes dele, o .cmd reabriu o cliente, e ele tentou o MESMO comando para
+#     sempre. O usuario viu a mesma cachoeira de erro repetindo sem parar e o
+#     canal ficou travado de forma permanente.
+#
+# Nao tenho PowerShell aqui, entao estas sao verificacoes ESTRUTURAIS sobre o
+# fonte: a ordem dos comandos e a existencia do try/catch.
+python3 - <<'PY' || exit 1
+import re, sys
+src = open("tools/remote/fnf-remote-client.ps1", encoding="utf-8").read()
+erros = []
+
+# (a) Set-JaRodou TEM de aparecer antes do Start-Process, dentro do foreach.
+i_foreach = src.find("foreach ($job in $novos)")
+i_set = src.find("Set-JaRodou $id", i_foreach)
+i_start = src.find("Start-Process", i_foreach)
+if i_foreach < 0 or i_set < 0 or i_start < 0:
+    erros.append("nao achei foreach / Set-JaRodou / Start-Process")
+else:
+    if i_set > i_start:
+        erros.append("Set-JaRodou vem DEPOIS do Start-Process: uma excecao "
+                     "no meio trava o canal para sempre (foi o bug do #4)")
+    else:
+        print("  PASSA  marca como rodado ANTES de executar (canal nao trava)")
+
+# (b) tem de existir try/catch envolvendo a execucao, e o catch nao pode
+#     deixar morrer: ele registra o erro como resultado.
+i_try = src.find("try {", i_foreach)
+i_catch = src.find("} catch {", i_foreach)
+if i_try < 0 or i_catch < 0:
+    erros.append("nao achei try/catch dentro do foreach")
+else:
+    if i_catch < i_start:
+        erros.append("o catch vem antes do Start-Process: nao protege a execucao")
+    else:
+        print("  PASSA  execucao protegida por try/catch (cliente nao morre)")
+
+# (c) a normalizacao de nulo tem de existir. Get-Content -Raw devolve $null
+#     em arquivo vazio, e $null quebrou GetByteCount.
+if "if ($null -eq $txtOut) { $txtOut = '' }" not in src:
+    erros.append("falta normalizar $txtOut para '' -- $null quebra GetByteCount")
+else:
+    print("  PASSA  saida vazia normalizada (Get-Content -Raw devolve $null)")
+
+# (d) o catch tem de gravar resultado, para eu ver o erro mesmo se explodir
+if "erro do cliente" not in src:
+    erros.append("o catch nao registra resultado: eu ficaria sem saber do erro")
+else:
+    print("  PASSA  catch registra o erro como resultado")
+
+if erros:
+    for e in erros:
+        print("    " + e)
+    sys.exit(1)
+PY
+
 echo "== o canal committado eh bem formado =="
 # ids tem de ser numeros e nao repetidos, senao o cliente pula ou repete
 python3 - <<'PY' || exit 1

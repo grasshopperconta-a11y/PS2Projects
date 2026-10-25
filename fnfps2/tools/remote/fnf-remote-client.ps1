@@ -169,100 +169,137 @@ while ($true) {
 
         Write-Host ("[{0:HH:mm:ss}] comando #{1}: {2}" -f (Get-Date), $id, $cmd) -ForegroundColor Green
 
+        # ---- MARCA COMO RODADO ANTES DE EXECUTAR. De proposito.
+        #
+        # A primeira versao marcava no fim. Quando o comando #4 estourou uma
+        # excecao no meio do caminho, o marca-no-fim nunca aconteceu, o .cmd
+        # reabriu o cliente, e ele tentou o MESMO comando para sempre -- o
+        # usuario viu a mesma cachoeira de erro repetindo sem parar, e o canal
+        # ficou permanentemente travado.
+        #
+        # Marcando antes, o pior caso possivel eh um resultado faltando (eu
+        # renucomando com um id novo). O pior caso de marcarno fim era travar
+        # o canal inteiro sem saida. A primeira opcao eh recuperavel; a
+        # segunda, nao.
+        $jaRodou = $id
+        Set-JaRodou $id
+
         # ---- trava de seguranca: antes de qualquer execucao
         $atingiu = Test-Protegido $cmd
         if ($atingiu) {
             Write-Host '           RECUSADO: mexe em area protegida' -ForegroundColor Red
-            #string numa linha so: quebrar com '+' faz o parser do PowerShell
-            #tratar a quebra como fim de instrucao (erro MissingEndParenthesis)
             $txt = "RECUSADO PELO CLIENTE: o comando menciona '$atingiu', que eh area protegida (System32 / Windows). Nada foi executado no seu PC."
             Set-Content -LiteralPath (Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)) -Value $txt -Encoding UTF8
-            # marca como rodado mesmo recusado, senao ele tentaria de novo para sempre
-            $jaRodou = $id
-            Set-JaRodou $id
             continue
         }
 
-        # ---- prefixo: CMD: manda para o Prompt de Comando, o resto para o PowerShell
-        $shell = 'powershell.exe'
-        $arg = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'
-        if ($cmd -match '^\s*CMD:\s*(.*)$') {
-            $shell = 'cmd.exe'
-            $arg = '/c'
-            $cmd = $Matches[1]
-        } elseif ($cmd -match '^\s*PS:\s*(.*)$') {
-            $cmd = $Matches[1]
-        }
-
-        $arqOut = [IO.Path]::GetTempFileName()
-        $arqErr = [IO.Path]::GetTempFileName()
-        $rc = -1
-
+        # ---- tudo que pode dar errado acontece aqui dentro. Nada escapa:
+        # um comando nao pode NUNCA matar o cliente.
         try {
-            $pi = Start-Process -FilePath $shell -ArgumentList @($arg, $cmd) `
-                -WorkingDirectory $env:USERPROFILE `
-                -NoNewWindow -PassThru `
-                -RedirectStandardOutput $arqOut -RedirectStandardError $arqErr
-
-            $pi | Wait-Process -Timeout $TempoLimitePadrao | Out-Null
-            if (-not $pi.HasExited) {
-                try { $pi.Kill() } catch {}
-                $rc = 124
-                Add-Content -Path $arqErr -Value ("estourou o tempo limite de {0}s" -f $TempoLimitePadrao) -Encoding UTF8
-            } else {
-                $rc = $pi.ExitCode
+            # ---- prefixo: CMD: manda para o Prompt de Comando, o resto para o PowerShell
+            $shell = 'powershell.exe'
+            $arg = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'
+            if ($cmd -match '^\s*CMD:\s*(.*)$') {
+                $shell = 'cmd.exe'
+                $arg = '/c'
+                $cmd = $Matches[1]
+            } elseif ($cmd -match '^\s*PS:\s*(.*)$') {
+                $cmd = $Matches[1]
             }
+
+            $arqOut = [IO.Path]::GetTempFileName()
+            $arqErr = [IO.Path]::GetTempFileName()
+            $rc = -1
+
+            try {
+                $pi = Start-Process -FilePath $shell -ArgumentList @($arg, $cmd) `
+                    -WorkingDirectory $env:USERPROFILE `
+                    -NoNewWindow -PassThru `
+                    -RedirectStandardOutput $arqOut -RedirectStandardError $arqErr
+
+                $pi | Wait-Process -Timeout $TempoLimitePadrao | Out-Null
+                if (-not $pi.HasExited) {
+                    try { $pi.Kill() } catch {}
+                    $rc = 124
+                    Add-Content -Path $arqErr -Value ("estourou o tempo limite de {0}s" -f $TempoLimitePadrao) -Encoding UTF8
+                } else {
+                    $rc = $pi.ExitCode
+                }
+            } catch {
+                $rc = 1
+                Add-Content -Path $arqErr -Value ("$($_.Exception.GetType().Name): $($_.Exception.Message)") -Encoding UTF8
+            }
+
+            # ---- le a saida. Get-Content -Raw devolve $null (e nao '') quando
+            # o arquivo estah vazio, e $null quebrou o GetByteCount no comando
+            # #4. Normaliza aqui, uma vez, para sempre.
+            $txtOut = ''
+            $txtErr = ''
+            if (Test-Path -LiteralPath $arqOut) { $txtOut = Get-Content -Raw -LiteralPath $arqOut -Encoding UTF8 }
+            if (Test-Path -LiteralPath $arqErr) { $txtErr = Get-Content -Raw -LiteralPath $arqErr -Encoding UTF8 }
+            if ($null -eq $txtOut) { $txtOut = '' }
+            if ($null -eq $txtErr) { $txtErr = '' }
+            $txtOut = [string]$txtOut
+            $txtErr = [string]$txtErr
+
+            # ---- monta o arquivo de resultado, com o comando junto
+            $relatorio = @()
+            $relatorio += "comando #$id"
+            $relatorio += "rodado em: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+            $relatorio += "comando  : $cmd"
+            $relatorio += "codigo   : $rc"
+            $relatorio += "-------- saida --------"
+            if ($txtOut -ne '') { $relatorio += $txtOut.TrimEnd() }
+            if ($txtErr -ne '') {
+                $relatorio += "-------- erros --------"
+                $relatorio += $txtErr.TrimEnd()
+            }
+            $corpo = $relatorio -join "`r`n"
+
+            $arqRel = Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)
+            Set-Content -LiteralPath $arqRel -Value $corpo -Encoding UTF8
+
+            Write-Host ("           rc={0}, {1} bytes -> {2}" -f $rc, $corpo.Length, (Split-Path -Leaf $arqRel)) -ForegroundColor DarkGray
+
+            # ---- console: mostra a saida (curta) para voce poder ler ou copiar
+            $bOut = [Text.Encoding]::UTF8.GetByteCount($txtOut)
+            if ($bOut -le $Teto) {
+                $linhas = ($txtOut -split "`r?`n")
+                if ($linhas.Count -le 40) {
+                    foreach ($ln in $linhas) { if ($ln -ne '') { Write-Host "           $ln" } }
+                } else {
+                    Write-Host "           (saida com $($linhas.Count) linhas; veja o arquivo)"
+                }
+            } else {
+                Write-Host "           (saida com $bOut bytes; veja o arquivo)"
+            }
+            if ($txtErr -ne '') {
+                Write-Host '           --- erros ---' -ForegroundColor DarkYellow
+                $elinhas = ($txtErr -split "`r?`n")
+                if ($elinhas.Count -le 20) {
+                    foreach ($ln in $elinhas) { if ($ln -ne '') { Write-Host "           $ln" -ForegroundColor DarkYellow } }
+                } else {
+                    Write-Host "           ($($elinhas.Count) linhas de erro; veja o arquivo)" -ForegroundColor DarkYellow
+                }
+            }
+
+            Remove-Item -LiteralPath $arqOut, $arqErr -Force -ErrorAction SilentlyContinue
         } catch {
-            $rc = 1
-            Add-Content -Path $arqErr -Value ("$($_.Exception.GetType().Name): $($_.Exception.Message)") -Encoding UTF8
+            # O cliente NAO morre. Registra o erro como resultado do comando e
+            # segue para o proximo. Assim um comando problematico custa UM
+            # resultado, nunca o canal inteiro.
+            Write-Host "           ERRO INTERNO no cliente: $($_.Exception.Message)" -ForegroundColor Red
+            try {
+                $rel = @()
+                $rel += "comando #$id"
+                $rel += "rodado em: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+                $rel += "comando  : $cmd"
+                $rel += "codigo   : 1"
+                $rel += "-------- erro do cliente --------"
+                $rel += "$($_.Exception.GetType().Name): $($_.Exception.Message)"
+                Set-Content -LiteralPath (Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)) -Value ($rel -join "`r`n") -Encoding UTF8
+            } catch {}
         }
-
-        $txtOut = if (Test-Path $arqOut) { Get-Content -Raw -LiteralPath $arqOut -Encoding UTF8 } else { '' }
-        $txtErr = if (Test-Path $arqErr) { Get-Content -Raw -LiteralPath $arqErr -Encoding UTF8 } else { '' }
-
-        # ---- monta o arquivo de resultado, com o comando junto
-        $relatorio = @()
-        $relatorio += "comando #$id"
-        $relatorio += "rodado em: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        $relatorio += "comando  : $cmd"
-        $relatorio += "codigo   : $rc"
-        $relatorio += "-------- saida --------"
-        if ([string]$txtOut) { $relatorio += $txtOut.TrimEnd() }
-        if ([string]$txtErr) {
-            $relatorio += "-------- erros --------"
-            $relatorio += $txtErr.TrimEnd()
-        }
-        $corpo = $relatorio -join "`r`n"
-
-        $arqRel = Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)
-        Set-Content -LiteralPath $arqRel -Value $corpo -Encoding UTF8
-
-        Write-Host ("           rc={0}, {1} bytes -> {2}" -f $rc, $corpo.Length, (Split-Path -Leaf $arqRel)) -ForegroundColor DarkGray
-
-        # ---- console: mostra a saida (curta) para voce poder ler ou copiar
-        $bOut = [Text.Encoding]::UTF8.GetByteCount([string]$txtOut)
-        if ($bOut -le $Teto) {
-            $linhas = ($txtOut -split "`r?`n")
-            if ($linhas.Count -le 40) {
-                foreach ($ln in $linhas) { if ($ln -ne '') { Write-Host "           $ln" } }
-            } else {
-                Write-Host "           (saida com $($linhas.Count) linhas; veja o arquivo)"
-            }
-        } else {
-            Write-Host "           (saida com $bOut bytes; veja o arquivo)"
-        }
-        if ([string]$txtErr) {
-            Write-Host '           --- erros ---' -ForegroundColor DarkYellow
-            $elinhas = ($txtErr -split "`r?`n")
-            if ($elinhas.Count -le 20) {
-                foreach ($ln in $elinhas) { if ($ln -ne '') { Write-Host "           $ln" -ForegroundColor DarkYellow } }
-            } else {
-                Write-Host "           ($($elinhas.Count) linhas de erro; veja o arquivo)" -ForegroundColor DarkYellow
-            }
-        }
-
-        $jaRodou = $id
-        Set-JaRodou $id
     }
 
     Start-Sleep -Seconds $Intervalo
