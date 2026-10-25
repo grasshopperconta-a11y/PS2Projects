@@ -73,6 +73,23 @@ ordem depois de `F0_FRAMEBUFFER_SET` é: `F0_DL_DUMP_BEGIN`, `F0_DL_DUMP_DONE`,
 | em `F0_TELEMETRY_FLUSH_DONE` | pendurou em `av_trace_capture()` |
 | em `F0_FRAME0_FIM` | o quadro 0 terminou; o problema está no quadro 1 |
 
+### ✅ A build de diagnóstico já existe — não precisa compilar no WSL
+
+Compilada **aqui**, via o conector do Drive + `tools/with_toolchain.sh` (ver
+`HANDOFF.md` §3). Zero warnings, os 8 marcos confirmados dentro do binário com
+`strings`.
+
+**Drive id `1rM3IeVOdCAEGdh8l06txyZXjAFD3V1nR`** —
+`https://drive.google.com/uc?id=1rM3IeVOdCAEGdh8l06txyZXjAFD3V1nR&export=download`
+
+5.272.716 B, md5 `90a6b7f85f0c4196e7e3654a70a884e6`, versão
+`0.2.106-f0diag`. Inclui a correção do `usb_ready`.
+
+**O que fazer:** baixar, copiar para `F:\FNF_PS2.ELF` (nome EXATO, na raiz do
+pendrive), rodar no console, e **mandar o `BOOT.txt`**. A tabela acima diz o que
+cada desfecho prova. Se a colheita (`FNF_COLHEITA.txt`) vier com conteúdo, a
+correção do `usb_ready` funcionou e a gente volta a ter telemetria.
+
 ---
 
 ## P1 — ❌ DESCARTADO: "o menu desenha cada item duas vezes" NÃO EXISTE
