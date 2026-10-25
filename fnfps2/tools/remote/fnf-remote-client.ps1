@@ -64,7 +64,7 @@ $TempoLimitePadrao = 180
 # (linha '@volta <url>'). Fica vazio ateh o canal mandar um -- assim o nome nao
 # estah gravado neste arquivo.
 $Volta = ''
-$TamanhoPedaco = 3500   # ntfy rejeita corpo grande; fatio em pedacos deste tamanho
+$TamanhoPedaco = 2000   # ntfy rejeita corpo grande; fatio em pedacos deste tamanho
 
 # Modo de execucao:
 #   'fila'   = roda todos os comandos novos, um atras do outro (o padrao antigo)
@@ -164,16 +164,16 @@ function Publicar-Volta([string]$url, [string]$texto) {
             $corpo = "[parte $($p + 1)/$($pedacos.Count)]`n" + $corpo
         }
         try {
-            # UTF-8 explicito, e ContentType declarado. Sem isso o
-            # Invoke-WebRequest manda o corpo como ISO-8859-1 (o padrao do
-            # Windows) e o ntfy nao reconhece como texto: guarda como ANEXO
-            # e a mensagem vira so "You received a file: attachment.txt".
-            # Foi exatamente o que aconteceu com todo resultado que tinha
-            # acento -- "Pasta", "Nao eh possivel". Resultado em ingles puro
-            # passava; tudo com acento virava anexo. Medido, nao suposto.
+            # bytes UTF-8 e NENHUM ContentType. O experimento (#52) provou as
+            # tres variantes com acento de verdade:
+            #   A1 string, sem ContentType        -> ANEXO (charset=iso-8859-1)
+            #   A2 bytes UTF-8, sem ContentType   -> MENSAGEM  <-- esta
+            #   A3 string, ContentType text/plain -> ANEXO (charset=iso-8859-1)
+            # Ou seja: o Invoke-WebRequest manda <string> como ISO-8859-1 (o
+            # padrao do Windows), e declarar ContentType nao salva. So byte[]
+            # em UTF-8 chega como texto de verdade.
             $bytes = [Text.Encoding]::UTF8.GetBytes($corpo)
             Invoke-WebRequest -Uri $url -Method PUT -Body $bytes `
-                -ContentType 'text/plain; charset=utf-8' `
                 -UseBasicParsing -TimeoutSec 30 | Out-Null
         } catch {
             # Silencio de proposito: um erro de publicacao nao pode poluir o

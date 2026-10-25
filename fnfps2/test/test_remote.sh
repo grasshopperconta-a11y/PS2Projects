@@ -383,20 +383,23 @@ if any(("ntfy" in u or "npoint" in u) for u in urls):
 else:
     print("  PASSA  endereco do canal de volta nao estah no cliente (vem do canal)")
 
-# (j) o corpo tem de ir como UTF-8 com ContentType declarado. Sem isso o
-#     Invoke-WebRequest manda ISO-8859-1 e o ntfy guarda como ANEXO: a mensagem
-#     vira so "You received a file: attachment.txt". Medido em producao -- todo
-#     resultado com acento ("Pasta", "Nao eh possivel") virou anexo.
+# (j) o corpo tem de ir como bytes UTF-8 e SEM ContentType. O experimento #52
+#     provou as tres variantes com acento de verdade:
+#       A1 string, sem ContentType        -> ANEXO (charset=iso-8859-1)
+#       A2 bytes UTF-8, sem ContentType   -> MENSAGEM
+#       A3 string, ContentType text/plain -> ANEXO (charset=iso-8859-1)
+#     Declarar ContentType nao salva: o Invoke-WebRequest manda <string> como
+#     ISO-8859-1, o padrao do Windows. So byte[] em UTF-8 chega como texto.
 if "GetBytes($corpo)" not in src:
     erros.append("corpo nao eh convertido para bytes UTF-8: resultado com "
                  "acento vira anexo no ntfy e eu nao leio")
 else:
-    print("  PASSA  corpo convertido para UTF-8 antes de publicar")
-if "text/plain; charset=utf-8" not in src:
-    erros.append("ContentType nao declarado: sem isso o ntfy pode tratar o "
-                 "corpo como arquivo")
+    print("  PASSA  corpo convertido para bytes UTF-8 antes de publicar")
+if "-ContentType" in src[src.find("function Publicar-Volta"):]:
+    erros.append("Publicar-Volta declara ContentType: o experimento #52 provou "
+                 "que isso faz o ntfy guardar como ANEXO em vez de mensagem")
 else:
-    print("  PASSA  ContentType text/plain; charset=utf-8 declarado")
+    print("  PASSA  publica sem ContentType (experimento #52: A2 era o unico que chegava)")
 
 # (k) modo 'ultimo': so o comando mais novo roda, o resto da fila eh
 #     abandonado. Sem isso, um lote publicado de uma vez despeja tudo em
