@@ -31,6 +31,11 @@ lugar.
   `1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf` — descompacte **direto na raiz** do
   pendrive. Traz `FNF_PS2.ELF` + `FNFPS2/assets/` com os 16 assets e os 81
   charts nos 4 layouts + `LEIA-ME.txt`.
+- **Cliente do canal remoto (ZIP, 7.049 B, 3 arquivos):**
+  `1R8YMDecPuhro9QqJGksChGPv0vfeyIQH` — ver §13. Não precisa de senha nem de
+  instalação. (A versão anterior, `1jfFk4SJt6Uffdaytd2jRala8xATNiTRu`, usava
+  um servidor exposto em URL pública que o proxy do e2b não serve — está
+  superada, não use.)
 - **`menu_cache.rle` corrigido (1.587.561 B):**
   `1G6hpFcI8u2i7Ig0-z2cQMgb8QOezU91E` — ver §11.
 - **ELF 0.2.112 (entregue, o atual):** `1tWGK7DhGWpbWTXlo3N4fhPQKyVDBXsQp`
@@ -472,77 +477,100 @@ história, e só na tela dos nomes das semanas.
 várias sessões e entreguei pendrive com o bug. Verificação que não **impede** o
 build não é verificação.
 
-## 13. Ponte de comando remoto (`tools/remote/`)
+## 13. Canal de comando remoto (`canal/` + `tools/remote/`)
 
 Canal para eu executar comandos no PC do usuário e receber a saída. Nasceu de
 um pedido dele: *"você mesmo pode criar um programa que faça isto e eu deixo
 aberto aqui no meu pc"*.
 
-### Arquitetura — dois lados, duas seguranças diferentes
+### A primeira tentativa FALHOU, e por quê
 
-| | lado do CLIENTE (PC do usuário) | lado do OPERADOR (eu) |
+Montei um servidor HTTP aqui, exposto em `https://8791-<sandbox>.e2b.app`, com
+senha nos dois sentidos. Testei tudo em `127.0.0.1` (20 verificações, todas
+passando) e entreguei.
+
+**O usuário abriu a URL e recebeu `502 Bad Gateway — Sandbox not found`.**
+
+Diagnóstico, em ordem:
+- O ID do sandbox estava **correto** (`E2B_SANDBOX_ID`), e o servidor estava
+  **no ar**, escutando em `0.0.0.0:8791` — confirmei os dois na hora.
+- De dentro do sandbox eu **não alcanço** a URL do proxy (`HTTP 000`): o
+  allowlist de saída daqui é exatamente os 6 hosts declarados, e `e2b.app`
+  não está entre eles. Então *nunca pude verificar a URL pública do meu lado* —
+  e não deixei isso claro o suficiente para o usuário testar antes de confiar.
+- O proxy do e2b diz que o sandbox **não existe**. Não é porta errada, não é
+  cache: é o sandbox inteiro. A troca de porta não resolveria.
+
+**A lição:** um servidor que eu só consigo testar por `localhost` não é um
+servidor que eu posso entregar. E "não consegui verificar" precisa virar
+"peça para o usuário testar antes de qualquer coisa", não uma nota de rodapé.
+
+### A arquitetura que funciona: arquivo público no GitHub
+
+O allowlist de saída me dá `api.github.com`, `github.com` e
+`codeload.github.com`. O repositório `grasshopperconta-a11y/PS2Projects` é
+**público** e eu tenho permissão de escrita. Daí:
+
+| sentido | como | precisa de senha? |
 |---|---|---|
-| rota | `POST /poll`, `/done`, `/chunk/*` | `POST /op/job` |
-| exige | `TOKEN_CLIENTE` | `127.0.0.1`/`::1` **e** `TOKEN_OPERADOR` |
-| pode | receber trabalho, devolver resultado | enfileirar comando |
+| eu → PC do usuário | eu faço `git push` de `canal/comandos.txt`; o cliente lê de `raw.githubusercontent.com` | **não** |
+| PC do usuário → eu | o cliente salva `resultados/resultado-<id>.txt`; o usuário arrasta a pasta para o Google Drive, que eu já leio pelo conector | **não** |
 
-A separação é deliberada: **quem descobre a URL pública não consegue injetar
-comando nenhum** — para isso precisa do `TOKEN_CLIENTE`, que só existe dentro
-do programa do usuário. E o operador tem duas barreiras independentes: vem da
-própria máquina **e** acerta o token.
+**Por que isso é seguro, e é seguro de um jeito diferente do anterior:** o
+canal é um arquivo **público**. Qualquer pessoa pode *lê-lo* — inclusive um
+curioso. Só eu posso *escrever*. O pior caso possível é alguém ler a lista de
+comandos que eu mandei. Não existe injeção de comando por fora, porque não
+existe endpoint público de escrita. Não há senha para vazar, não há token no
+PC do usuário, não há servidor meu exposto.
 
-Os tokens são gerados com `secrets.token_hex(32)` e **persistidos em disco**
-(`tools/remote/estado/`), então um restart do servidor não invalida o cliente
-que está rodando há horas no PC do usuário. Esse diretório está no
-`.gitignore` — ver §14.
+Isso custa um passo manual por lote (arrastar a pasta `resultados` para o
+Drive), e é a troca certa: a versão automática exigiria um token do GitHub no
+PC dele, e um canal de escrita pública seria exatamente a coisa perigosa que
+eu tinha alertado que não faria.
+
+### O cliente
+
+`tools/remote/fnf-remote-client.ps1` — PowerShell puro, zero dependência,
+zero instalação. Lê o canal a cada 5 s, executa só as linhas com id maior que
+o último que rodou (guardado em `estado.txt`), e por isso **nunca repete** um
+comando depois de fechar e reabrir.
+
+Formato do canal, uma linha por comando: `<id>|<comando>`. Prefixo `CMD:` manda
+para o Prompt de Comando; o resto vai para o PowerShell.
+
+O `?cb=<timestamp>` no fetch não é enfeite: o GitHub põe um CDN na frente do
+`raw.githubusercontent.com`, e sem furar o cache o PC do usuário poderia ficar
+lendo a cópia velha por minutos depois de eu publicar um comando.
 
 ### A trava de System32
 
-Fica **no cliente**, antes de qualquer execução, e é uma recusa dura: o
-comando nem roda, devolve `rc=99` e me explica por quê. A normalização é
-`minusculo -> sem espacos -> barra normalizada`, então
-`"C:\Windows\System 32"`, `c:/windows/SYSTEM32` e `S Y S T E M 3 2` caem
-todos no mesmo padrão.
+Fica **no cliente**, antes de qualquer execução, e é recusa dura: o comando
+não roda, devolve código 99 e salva o resultado explicando. A normalização é
+`minúsculo -> sem espaços -> barra arrumada`, então `"C:\Windows\System 32"`,
+`c:/windows/SYSTEM32` e `WiNdOwS\SyStEm32` caem no mesmo filtro.
 
-**O buraco que existiu e foi fechado:** eu tinha escrito `winssxs`, mas a
-pasta real é `WinSxS`, cujo lowercase é `winsxs` — **um `s` a menos**. Um
-comando em WinSxS passava direto. Só foi pego porque o teste de regressão
-cobre `C:\WINDOWS\WinSxS\x` e `C:\WINDOWS\WINSXS\manifest`. Um teste que
-não exercita o caso real não protege de nada.
+**O buraco que existiu:** eu tinha escrito `winssxs`, mas a pasta real é
+`WinSxS`, cujo minúsculo é `winsxs` — **um `s` a menos**. Comando em WinSxS
+passava direto. Só foi pego porque o teste cobre esse caso.
+
+**E o bug de id que o teste pegou:** a comparação é `id <= já rodou`, e o
+estado inicial é 0. Um comando com id `0` **nunca executaria** — eu ia achar
+que o comando tinha sumido. Agora o parser rejeita `id < 1` explicitamente.
 
 ### O bug do `.cmd` que quebraria todo uso
 
 O template comparava `%FNF_PONTE%` com `@@PONTE@@`. Depois de o gerador
 substituir o endereço real, a comparação virou *"endereco == endereco"* —
 **sempre verdadeira**, então o programa dava erro e saía em 100% dos usos.
-Eu só peguei porque reli o `.cmd` gerado em vez de confiar no template.
-Corrigido: a validação agora é `findstr /b /c:"http"`, que continua significativa
-depois da substituição. Coberto por teste.
-
-### Contar caracteres em batch dá margem a erro
-
-A primeira versão media o tamanho da senha com
-`for /f %%A in ('echo %FNF_TOKEN%') do set /a _TAM+=1`, que conta **palavras**,
-não caracteres. A validação de tamanho ficou no PowerShell, que conta certo; o
-batch só valida o endereço.
-
-### O que eu NÃO consegui verificar
-
-**A URL pública não responde de dentro do meu sandbox** — o allowlist de saída
-daqui não inclui o domínio do proxy. O servidor funciona (testado em
-`127.0.0.1`), mas *não posso provar* que o PC do usuário alcança a URL. Por
-isso o LEIA-ME manda o usuário abrir `<ponte>/health` no navegador antes de
-qualquer coisa: se aparecer `{"ok": true, ...}`, o canal está vivo.
-
-Além disso a URL **morre com a minha sessão**. Isso está dito de forma bem
-clara no LEIA-ME, porque senão o usuário deixaria o programa ligado de um dia
-para o outro esperando eu aparecer.
+Peguei reliando o `.cmd` gerado em vez de confiar no template. A validação
+agora é `findstr /b /c:"http"`, que continua significativa depois da
+substituição.
 
 ### Teste
 
-`test/test_remote.sh`, chamado por `test/run_tests.sh`. 20 verificações:
-trava (14 bloqueios + 12 liberações), gerador, sintaxe, e o ciclo completo da
-ponte com as quatro recusas de autenticação.
+`test/test_remote.sh`, chamado por `test/run_tests.sh`. 10 verificações:
+trava (14 bloqueios + 12 liberações), parser (16 casos), gerador, ausência de
+qualquer referência a servidor/porta/senha, e o canal commitado bem formado.
 
 ### Layout do pendrive (o jogo exige)
 

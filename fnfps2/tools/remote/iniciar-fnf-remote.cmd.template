@@ -6,37 +6,38 @@ rem ============================================================
 rem  FNF REMOTE - iniciar
 rem ============================================================
 rem  De dois cliques neste arquivo. Ele:
-rem    1. configura o endereco da ponte e a senha
+rem    1. aponta para o canal de comandos
 rem    2. abre o cliente PowerShell
 rem    3. se o cliente fechar ou der erro, ESPERA 3s e ABRE DE NOVO
 rem
 rem  Ou seja: fechar e reabrir volta a funcionar igual. Se quiser
 rem  parar de vez, feche esta janela.
+rem
+rem  NAO PRECISA DE SENHA. O canal eh um arquivo publico do GitHub:
+rem  qualquer pessoa pode LE-lo, so eu posso escrever.
 rem ============================================================
 
-set "FNF_PONTE=@@PONTE@@"
-set "FNF_TOKEN=@@TOKEN@@"
+set "FNF_CANAL=@@CANAL@@"
 
 rem ------------------------------------------------------------
 rem  Validacao: o endereco tem de comecar com http. Um arquivo gerado
 rem  errado eh pego aqui, e nao na hora de conectar.
-rem  (A senha eh validada pelo PowerShell, que sabe contar caracteres
-rem  direito -- contar em batch da margem a erro.)
 rem ------------------------------------------------------------
-echo %FNF_PONTE% | findstr /b /c:"http" >nul
+echo %FNF_CANAL% | findstr /b /c:"http" >nul
 if errorlevel 1 (
-    echo ERRO: endereco da ponte nao parece valido: %FNF_PONTE%
-    echo Peca um novo "iniciar-fnf-remote.cmd" -- este aqui nao foi gerado direito.
+    echo ERRO: endereco do canal nao parece valido: %FNF_CANAL%
+    echo Peca um novo "iniciar-fnf-remote.cmd" -- este nao foi gerado direito.
     pause
     exit /b 2
 )
 
 echo.
 echo   FNF REMOTE iniciando...
-echo   ponte: %FNF_PONTE%
+echo   canal: %FNF_CANAL%
 echo.
 echo   Deixe esta janela ABERTA. Feche-a so quando quiser parar.
 echo   Se o cliente fechar sozinho, ele reabre em 3 segundos.
+echo   Nao precisa de senha: o canal eh publico para leitura.
 echo.
 
 :loop

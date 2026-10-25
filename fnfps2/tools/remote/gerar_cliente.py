@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Gera o pacote do cliente para o usuario: o .cmd com endereco e senha ja
-preenchidos, mais o LEIA-ME. Nada de marcador para ele ter que editar.
+"""Gera o pacote do cliente para o usuario: o .cmd com o endereco do canal
+ja preenchido, mais o LEIA-ME. Nada de marcador para ele ter que editar.
 
-    python3 gerar_cliente.py --ponte https://xxxx.e2b.app --token ABC123 \
+    python3 gerar_cliente.py --canal https://raw.githubusercontent.com/.../comandos.txt \
         --saida /tmp/pacote_cliente
 """
 
@@ -20,16 +20,33 @@ LEIAME = """FNF REMOTE - COMO USAR
 O QUE EH ISTO
 -------------
 Um programa que fica aberto no seu PC e me deixa rodar comandos nele,
-recebendo a resposta de volta. Serve para eu montar o pendrive, conferir
-se os arquivos estao no lugar certo e ler os logs do jogo sem voce ter que
-ficar me explicando o que ve na tela.
+recebendo a saida de volta. Serve para eu montar o pendrive, conferir se os
+arquivos estao no lugar certo e ler os logs do jogo sem voce ter que ficar
+me explicando o que ve na tela.
 
 NAO PRECISA INSTALAR NADA. Usa so o PowerShell que ja vem no Windows.
+NAO PRECISA DE SENHA.
+
+COMO FUNCIONA A SEGURANCA (leia, eh rapido)
+-------------------------------------------
+O canal de comandos eh um ARQUIVO PUBLICO do GitHub. Isso eh de proposito:
+
+  * qualquer pessoa pode LE-lo -- inclusive voce, inclusive um curioso;
+  * so EU posso escrever nele -- o repo eh meu e so eu tenho a chave.
+
+Ou seja: quem descobrir o endereco ve os mesmos comandos que voce ve, e nao
+consegue mandar nada. O pior caso possivel eh alguem ler a lista de comandos
+que eu te mandei. Nada alem disso.
+
+E a trava de System32 fica no SEU PC, dentro do programa, antes de qualquer
+execucao. Um comando que tente mexer em System32, SysWOW64 ou WinSxS NAO
+executa: ele devolve codigo 99, salva o resultado dizendo que foi recusado,
+e nao roda. Nao eh aviso -- ele realmente nao roda.
 
 COMO LIGAR
 ----------
 1. Descompacte esta pasta em qualquer lugar (Documentos, por exemplo).
-   Os tres arquivos tem de ficar JUNTOS na mesma pasta:
+   Os arquivos tem de ficar JUNTOS na mesma pasta:
 
        iniciar-fnf-remote.cmd
        fnf-remote-client.ps1
@@ -37,29 +54,38 @@ COMO LIGAR
 
 2. De DOIS CLIQUES em "iniciar-fnf-remote.cmd".
 
-3. ANTES DE MAIS NADA, teste se o canal esta vivo: abra no seu navegador
+3. Vai abrir uma janela preta. DEIXE ABERTA. Ela mostra:
 
-       @@PONTE@@/health
-
-   Se aparecer algo como {"ok": true, ...} -- funciona, pode seguir.
-   Se der erro de pagina, me avise: eu regero o programa com endereco novo.
-
-4. De DOIS CLIQUES em "iniciar-fnf-remote.cmd".
-
-5. Vai abrir uma janela preta. DEIXE ABERTA. Ela mostra:
-
-       FNF REMOTE - cliente
-       ponte : https://...
+       FNF REMOTE - cliente (canal GitHub)
+       canal : https://raw.githubusercontent.com/...
        trava : System32 / Windows = NUNCA executa
+       saida : ...\\resultados
 
-Quando eu mandar um comando, aparece uma linha verde com o comando e,
-depois, o resultado. Se nao aparecer nada por minutos, eh normal: eu so
-mando comando quando preciso.
+Quando eu mando um comando, aparece uma linha VERDE com o comando e, depois,
+o resultado. Se nao aparecer nada por minutos, eh normal: eu so mando comando
+quando preciso.
+
+COMO EU RECEBO A SAIDA
+----------------------
+Cada comando gera um arquivo em `resultados\\`, com este formato:
+
+    resultado-1.txt
+    resultado-2.txt
+    ...
+
+Dentro vem o comando, a data, o codigo de saida, a saida e os erros.
+
+Para me entregar: ARRASTE A PASTA `resultados` PARA O GOOGLE DRIVE
+(pelo navegador, como se fosse subir qualquer arquivo). Eu leio de la.
+
+Se a saida for curta, voce tambem pode so copiar o que apareceu na janela
+preta e colar aqui -- as duas formas funcionam.
 
 SE FECHAR E REABRIR
 -------------------
-Fecha e da dois cliques de novo. Ele volta a funcionar EXATAMENTE igual --
-mesmo endereco, mesma senha. Nao precisa me pedir nada novo.
+Fecha e da dois cliques de novo. Ele volta a funcionar EXATAMENTE igual, e
+NAO repete os comandos que ja rodou: o programa guarda o numero do ultimo.
+Nao precisa me pedir nada novo.
 
 Para comecar sozinho quando voce ligar o PC (opcional):
    1. aperte a tecla do Windows, digite "Agendador de Tarefas", abra
@@ -70,60 +96,40 @@ Para comecar sozinho quando voce ligar o PC (opcional):
    6. Programa: o caminho COMPLETO do iniciar-fnf-remote.cmd
    7. marque "Executar apenas quando o usuario estiver conectado"
 
-SEGURANCA - LEIA, EH IMPORTANTE
--------------------------------
-Este programa abre uma porta para o seu PC. Verdades:
+QUANTO TEMPO DEMORA
+-------------------
+O programa consulta o canal a cada 5 segundos. Porem o GitHub usa uma rede
+de cache (CDN) na frente do arquivo, entao as vezes ele pode levar alguns
+minutos para ver um comando novissimo. Se eu mandar algo e nao acontecer
+nada, espere um pouco -- nao precisa fazer nada.
 
-* So funciona com a SENHA, que esta dentro do iniciar-fnf-remote.cmd.
-  Sem ela, a ponte nao entrega comando nenhum. Quem tentar entra sem
-  senha recebe "token invalido" e nao acontece nada.
-
-* A URL da ponte so existe ENQUANTO EU ESTIVER TRABALHANDO com voce.
-  Quando eu encerrar a sessao, ela morre e o programa para de receber
-  comandos. Nao eh um acesso permanente, e nao adianta deixar ligado
-  de um dia para o outro esperando que eu apareca. Quando eu voltar,
-  eu te mando um programa novo com endereco novo -- o anterior fica
-  inutilizado sozinho.
-
-* VOCE VE TUDO: cada comando aparece na janela preta, antes de rodar.
-  Se aparecer algo que voce nao reconhece, feche a janela na hora.
-
-* A trava de System32 fica no SEU PC, dentro do cliente, antes de qualquer
-  coisa. Um comando que tente mexer em System32, SysWOW64 ou na pasta
-  Windows NAO executa: ele devolve codigo 99 e me diz que foi recusado.
-  Nao eh aviso -- ele realmente nao roda.
-
-* Isso nao substitui antivirus nem cuidado. Se um dia voce nao confiar no
-  que esta rodando, feche a janela e me avise.
-
-QUANDO EU USO ISSO
-------------------
-Montar e conferir o pendrive, ver onde o jogo gravou o log, e ler o log de
-volta. Nada alem disso.
+VOCE VE TUDO
+------------
+Cada comando aparece na janela preta ANTES de rodar. Se aparecer algo que
+voce nao reconhece, feche a janela na hora e me avise.
 
 PARA PARAR
 ----------
-Feche a janela preta. Pronto. Se criar a tarefa agendada, apague a tarefa
+Feche a janela preta. Pronto. Se criou a tarefa agendada, apague a tarefa
 tambem.
 """
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ponte", required=True)
-    ap.add_argument("--token", required=True)
+    ap.add_argument("--canal", required=True)
     ap.add_argument("--saida", required=True)
     args = ap.parse_args()
 
     os.makedirs(args.saida, exist_ok=True)
 
-    # .cmd com os valores de verdade
+    # .cmd com o endereco de verdade
     with open(os.path.join(AQUI, "iniciar-fnf-remote.cmd.template"),
               encoding="utf-8") as f:
         tpl = f.read()
-    if "@@PONTE@@" not in tpl or "@@TOKEN@@" not in tpl:
-        raise SystemExit("template sem marcador")
-    cmd = tpl.replace("@@PONTE@@", args.ponte).replace("@@TOKEN@@", args.token)
+    if "@@CANAL@@" not in tpl:
+        raise SystemExit("template sem marcador @@CANAL@@")
+    cmd = tpl.replace("@@CANAL@@", args.canal)
     dst = os.path.join(args.saida, "iniciar-fnf-remote.cmd")
     with open(dst, "w", encoding="utf-8", newline="\r\n") as f:
         f.write(cmd)
@@ -138,9 +144,7 @@ def main():
     print("pacote em %s" % args.saida)
     for n in sorted(os.listdir(args.saida)):
         print("   %-28s %d bytes" % (n, os.path.getsize(os.path.join(args.saida, n))))
-    # o token nao pode vazar no log
-    print("   ponte : %s" % args.ponte)
-    print("   token : (%d caracteres, nao mostrado)" % len(args.token))
+    print("   canal : %s" % args.canal)
 
 
 if __name__ == "__main__":

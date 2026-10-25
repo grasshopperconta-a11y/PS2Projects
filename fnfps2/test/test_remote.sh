@@ -1,22 +1,25 @@
 #!/bin/sh
-# Testes da ponte de comando remoto.
+# Testes do FNF REMOTE (canal GitHub).
 #
-# Dois defeitos reais jah aconteceram aqui e estao cobertos:
+# Defeitos reais que jah aconteceram e estao cobertos aqui:
 #
-#  1. O template do .cmd comparava %FNF_PONTE% com @@PONTE@@. Depois de
-#     substituir o endereco real, a comparacao ficou "endereco == endereco"
-#     e portanto VERDADEIRA -- o programa dava erro e saida em TODO uso.
-#     O teste agora gera o .cmd e confirma que a validacao nao dispara.
+#  1. A trava de System32 tinha 'winssxs' onde a pasta real eh 'WinSxS'
+#     (lowercase 'winsxs'). Um comando em WinSxS passava.
 #
-#  2. A trava de System32 tinha 'winssxs' onde a pasta real eh 'WinSxS'
-#     (lowercase 'winsxs'). Um comando em WinSxS passava. O teste cobre.
+#  2. O .cmd comparava %FNF_PONTE% com @@PONTE@@. Depois de substituir o
+#     endereco real, a comparacao ficou "endereco == endereco" e portanto
+#     VERDADEIRA -- o programa dava erro e saida em TODO uso.
+#
+#  3. A versao anterior usava um servidor meu exposto numa URL publica. O
+#     proxy do e2b respondeu "502 Sandbox not found" para o usuario: a URL
+#     nao eh alcancavel de fora. O canal agora eh um arquivo PUBLICO do
+#     GitHub, que qualquer um le e so eu escrevo -- sem servidor, sem senha.
 set -e
 cd "$(dirname "$0")/.."
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  PASSA  $1"; }
 falha(){ FAIL=$((FAIL+1)); echo "  FALHA  $1"; }
-checa(){ if [ "$2" = "$3" ]; then ok "$1"; else falha "$1 (esperado '$3', veio '$2')"; fi; }
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -24,9 +27,8 @@ trap 'rm -rf "$TMP"' EXIT
 echo "== trava de System32 =="
 # replica EXATAMENTE a normalizacao de Test-Protegido no .ps1:
 #   minusculo, sem espacos, barra normalizada
-python3 - "$TMP" <<'PY' || exit 1
-import sys, re, os
-TMP = sys.argv[1]
+python3 - <<'PY' || exit 1
+import re, sys
 ps1 = open("tools/remote/fnf-remote-client.ps1", encoding="utf-8").read()
 m = re.search(r"\$Protegido = @\((?P<corpo>.*?)\)", ps1, re.S)
 assert m, "nao achei $Protegido no .ps1"
@@ -80,7 +82,6 @@ for c in DEVE_BLOQUEAR:
 for c in DEVE_PASSAR:
     if protegido(c) is not None:
         erros.append("DEVERIA PASSAR e bloqueou: " + c)
-
 if erros:
     for e in erros:
         print("    " + e)
@@ -89,10 +90,77 @@ print("  PASSA  trava: %d bloqueios e %d liberacoes corretos"
       % (len(DEVE_BLOQUEAR), len(DEVE_PASSAR)))
 PY
 
+echo "== parser do canal (formato <id>|<comando>) =="
+python3 - <<'PY' || exit 1
+import sys
+
+def parse(texto, ja_rodou=0):
+    """Porta EXATA do laco de parse do .ps1."""
+    novos = []
+    for linha in texto.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        l = linha.strip()
+        if l == "" or l.startswith("#"):
+            continue
+        i = l.find("|")
+        if i <= 0:
+            continue
+        id_txt = l[:i].strip()
+        cmd = l[i + 1:].strip()
+        if cmd == "":
+            continue
+        try:
+            nid = int(id_txt)
+        except ValueError:
+            continue
+        # igual ao .ps1: id tem de ser >= 1, senao nunca passaria do
+        # estado inicial 0 e viraria um comando fantasma.
+        if nid < 1:
+            continue
+        if nid <= ja_rodou:
+            continue
+        novos.append((nid, cmd))
+    return sorted(novos)
+
+# o arquivo REAL do canal, no repo
+real = open("../canal/comandos.txt", encoding="utf-8").read()
+r = parse(real)
+assert r == [], "o canal real nao deveria ter comando ativo, tem: %r" % (r,)
+print("  PASSA  canal real: so comentarios, nenhum comando ativo")
+
+casos = [
+    # (texto, ja_rodou, esperado)
+    ("1|Get-Volume", 0, [(1, "Get-Volume")]),
+    ("2|whoami", 1, [(2, "whoami")]),
+    ("1|a\n2|b", 0, [(1, "a"), (2, "b")]),
+    ("1|a\n2|b", 1, [(2, "b")]),            # ja rodou o 1
+    ("1|a\n2|b", 2, []),                     # ja rodou os dois
+    ("3|c\n1|a\n2|b", 0, [(1, "a"), (2, "b"), (3, "c")]),   # ordena por id
+    ("# comentario\n\n1|a", 0, [(1, "a")]),  # ignora # e vazias
+    ("1|", 0, []),                           # comando vazio
+    ("1|   ", 0, []),                        # comando so espaco
+    ("|a", 0, []),                           # id vazio
+    ("abc|a", 0, []),                        # id nao numerico
+    ("1|a|b", 0, [(1, "a|b")]),              # pipe dentro do comando eh do comando
+    ("0|zero", 0, []),                       # id 0 NUNCA rodaria: fantasma
+    ("-1|neg", 0, []),                       # id negativo idem
+    ("1|a\n0|fantasma\n2|b", 0, [(1, "a"), (2, "b")]),  # fantasma nao atrapalha
+    ("  1  |  espacado  ", 0, [(1, "espacado")]),
+]
+erros = []
+for texto, ja, esp in casos:
+    got = parse(texto, ja)
+    if got != esp:
+        erros.append("parse(%r, ja=%d) = %r, esperado %r" % (texto, ja, got, esp))
+if erros:
+    for e in erros:
+        print("    " + e)
+    sys.exit(1)
+print("  PASSA  parser: %d casos corretos (ordenacao, dup, vazio, pipe)" % len(casos))
+PY
+
 echo "== gerador do cliente =="
-PONTE="https://8791-testetestetestetestetestetesteteste.e2b.app"
-TOKEN="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-python3 tools/remote/gerar_cliente.py --ponte "$PONTE" --token "$TOKEN" \
+CANAL="https://raw.githubusercontent.com/grasshopperconta-a11y/PS2Projects/arena/4c50659b-ps2projects/canal/comandos.txt"
+python3 tools/remote/gerar_cliente.py --canal "$CANAL" \
     --saida "$TMP/pacote" >"$TMP/gen.log" 2>&1 || { cat "$TMP/gen.log"; falha "gerador rodou"; exit 1; }
 ok "gerador rodou"
 
@@ -100,21 +168,21 @@ for f in iniciar-fnf-remote.cmd fnf-remote-client.ps1 LEIA-ME.txt; do
     if [ -f "$TMP/pacote/$f" ]; then ok "gerou $f"; else falha "faltou $f"; fi
 done
 
-# O defeito 1: a validacao do .cmd nao pode disparar com endereco real.
-if grep -q "@@PONTE@@" "$TMP/pacote/iniciar-fnf-remote.cmd"; then
-    falha "ainda existe marcador @@PONTE@@ no .cmd gerado"
+# O defeito 2: a validacao do .cmd nao pode disparar com endereco real.
+if grep -q "@@CANAL@@" "$TMP/pacote/iniciar-fnf-remote.cmd"; then
+    falha "ainda existe marcador @@CANAL@@ no .cmd gerado"
 else
     ok "nenhum marcador sobrou no .cmd"
 fi
 
-if grep -qF "FNF_PONTE=$PONTE" "$TMP/pacote/iniciar-fnf-remote.cmd"; then
-    ok "endereco real embutido no .cmd"
+if grep -qF "FNF_CANAL=$CANAL" "$TMP/pacote/iniciar-fnf-remote.cmd"; then
+    ok "endereco real do canal embutido no .cmd"
 else
-    falha "endereco nao foi embutido"
+    falha "endereco do canal nao foi embutido"
 fi
 
 # a checagem findstr /b http tem de PASSAR com o endereco real
-if printf '%s\n' "$PONTE" | grep -q '^http'; then
+if printf '%s\n' "$CANAL" | grep -q '^http'; then
     ok "validacao do endereco nao dispara com endereco real"
 else
     falha "validacao do endereco dispararia"
@@ -127,62 +195,41 @@ else
     ok "validacao pega endereco quebrado"
 fi
 
-if grep -q "$TOKEN" "$TMP/pacote/iniciar-fnf-remote.cmd"; then
-    ok "senha embutida no .cmd (so o programa do usuario a tem)"
+echo "== nada de servidor nem senha =="
+# A versao anterior expunha um servidor meu numa URL publica. O proxy do e2b
+# respondeu 502 "Sandbox not found" para o usuario. Nada de porta, nada de
+# token: se voltar, o teste quebra de proposito.
+if grep -qiE "8791|e2b\.app|X-Token|FNF_TOKEN" "$TMP/pacote/fnf-remote-client.ps1" \
+   || grep -qiE "8791|e2b\.app|X-Token|FNF_TOKEN" "$TMP/pacote/iniciar-fnf-remote.cmd"; then
+    falha "voltou referencia a servidor/porta/senha -- o canal publico nao precisa"
 else
-    falha "senha nao foi embutida"
+    ok "nenhuma referencia a servidor, porta ou senha"
 fi
 
 echo "== sintaxe =="
-python3 -m py_compile tools/remote/remote_bridge.py && ok "remote_bridge.py compila"
-python3 -m py_compile tools/remote/gerar_cliente.py  && ok "gerar_cliente.py compila"
+python3 -m py_compile tools/remote/gerar_cliente.py && ok "gerar_cliente.py compila"
 
-echo "== ponte: ciclo completo com autenticacao =="
-PORTA=18931
-python3 tools/remote/remote_bridge.py --porta $PORTA >"$TMP/ponte.log" 2>&1 &
-PID=$!
-trap 'kill $PID 2>/dev/null; rm -rf "$TMP"' EXIT
-i=0
-while [ $i -lt 40 ]; do
-    curl -s -m 2 "http://127.0.0.1:$PORTA/health" >/dev/null 2>&1 && break
-    i=$((i+1)); sleep 0.25
-done
-if [ $i -ge 40 ]; then cat "$TMP/ponte.log"; falha "ponte subiu"; else ok "ponte subiu na porta $PORTA"; fi
-
-TC=$(cat tools/remote/estado/token_cliente)
-TO=$(cat tools/remote/estado/token_operador)
-B="http://127.0.0.1:$PORTA"
-
-r=$(curl -s -X POST $B/poll -H 'Content-Type: application/json' -d '{}')
-checa "cliente sem senha recusado" "$r" '{"erro": "token invalido"}'
-
-r=$(curl -s -X POST $B/poll -H 'Content-Type: application/json' -H "X-Token: errada" -d '{}')
-checa "cliente com senha errada recusado" "$r" '{"erro": "token invalido"}'
-
-r=$(curl -s -X POST $B/op/job -H 'Content-Type: application/json' -d '{"cmd":"x"}')
-checa "operador sem token recusado" "$r" '{"erro": "token de operador invalido"}'
-
-r=$(curl -s -X POST $B/op/job -H 'Content-Type: application/json' -H "X-Op: $TC" -d '{"cmd":"x"}')
-checa "operador com token de cliente recusado" "$r" '{"erro": "token de operador invalido"}'
-
-r=$(curl -s -X POST $B/op/job -H 'Content-Type: application/json' -H "X-Op: $TO" -d '{"cmd":"echo teste-remoto","tempo_limite":30}')
-case "$r" in *'"ok": true'*) ok "job enfileirado" ;; *) falha "job enfileirado ($r)" ;; esac
-JID=$(printf '%s' "$r" | sed -n 's/.*"id": \([0-9]*\).*/\1/p')
-
-r=$(curl -s -X POST $B/poll -H 'Content-Type: application/json' -H "X-Token: $TC" -d '{}')
-case "$r" in *echo\ teste-remoto*) ok "cliente recebe o job" ;; *) falha "cliente recebeu '$r'" ;; esac
-
-r=$(curl -s -X POST $B/poll -H 'Content-Type: application/json' -H "X-Token: $TC" -d '{}')
-case "$r" in *'"cmd": null'*) ok "fila vazia devolve null" ;; *) falha "fila vazia ($r)" ;; esac
-
-curl -s -X POST $B/done -H 'Content-Type: application/json' -H "X-Token: $TC" \
-    -d '{"id":'"$JID"',"rc":0,"out":"teste-remoto\n","err":""}' >/dev/null
-r=$(curl -s "$B/op/resultado?id=$JID" -H "X-Op: $TO")
-case "$r" in *teste-remoto*) ok "operador le o resultado" ;; *) falha "operador leu '$r'" ;; esac
-
-kill $PID 2>/dev/null || true
-wait $PID 2>/dev/null || true
-trap 'rm -rf "$TMP"' EXIT
+echo "== o canal committado eh bem formado =="
+# ids tem de ser numeros e nao repetidos, senao o cliente pula ou repete
+python3 - <<'PY' || exit 1
+import re, sys
+ids = []
+for linha in open("../canal/comandos.txt", encoding="utf-8").read().splitlines():
+    l = linha.strip()
+    if not l or l.startswith("#"):
+        continue
+    i = l.find("|")
+    if i <= 0:
+        print("    linha sem '<id>|': %r" % l); sys.exit(1)
+    t = l[:i].strip()
+    if not re.fullmatch(r"[1-9][0-9]*", t):
+        print("    id tem de ser inteiro >= 1: %r" % t); sys.exit(1)
+        print("    id nao eh numero: %r" % t); sys.exit(1)
+    ids.append(int(t))
+if len(ids) != len(set(ids)):
+    print("    ids repetidos: %r" % ids); sys.exit(1)
+print("  PASSA  canal: %d comando(s), ids unicos e numericos" % len(ids))
+PY
 
 echo ""
 echo "remote: $PASS passaram, $FAIL falharam"

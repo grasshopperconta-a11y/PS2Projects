@@ -1,20 +1,21 @@
 <#
-    FNF REMOTE - cliente
-    ===================
+    FNF REMOTE - cliente (canal GitHub)
+    ==================================
 
-    Roda no seu PC. Fica consultando a ponte; quando eu mando um comando,
-    ele executa aqui e devolve a saida.
+    Roda no seu PC. Le um arquivo publico do GitHub onde eu escrevo os
+    comandos, executa os que sao novos, e guarda a saida.
 
     NAO PRECISA INSTALAR NADA: usa so o PowerShell que ja vem no Windows.
+    NAO PRECISA DE SENHA para receber comandos: o arquivo do canal eh
+    publico, e qualquer pessoa pode LE-lo. So eu posso escrever nele.
 
     Como usar:
-        1. deixe este arquivo na mesma pasta que "iniciar-fnf-remote.cmd"
+        1. deixe os arquivos juntos na mesma pasta
         2. de dois cliques em "iniciar-fnf-remote.cmd"
         3. deixe a janela preta aberta
 
-    Se voce fechar a janela, eh so dar dois cliques de novo -- ele volta a
-    funcionar exatamente igual. Se quiser que abra sozinho quando ligar o PC,
-    veja o LEIA-ME.
+    Fechou e reabriu? Funciona igual. O programa guarda qual comando ja
+    rodou, entao nao repete nada.
 
     TRAVA DE SEGURANCA (a que voce pediu):
         Este programa RECUSA executar qualquer comando que tente mexer na
@@ -26,26 +27,24 @@
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------- configura
-# Endereco da ponte. Quem gera isso sou eu; voce nao precisa mudar.
-$Ponte = $env:FNF_PONTE
-if ([string]::IsNullOrWhiteSpace($Ponte)) { $Ponte = 'http://127.0.0.1:8791' }
-
-# Senha. So este programa tem. Se ela nao bater, a ponte nao manda nada.
-$Token = $env:FNF_TOKEN
-if ([string]::IsNullOrWhiteSpace($Token)) {
-    Write-Host 'FALTA A SENHA (FNF_TOKEN). Rode pelo "iniciar-fnf-remote.cmd".' -ForegroundColor Red
-    exit 2
-}
-if ($Token.Length -lt 16) {
-    Write-Host ('A SENHA PARECE CURTA DEMAIS ({0} caracteres).' -f $Token.Length) -ForegroundColor Red
-    Write-Host 'Peca um novo "iniciar-fnf-remote.cmd" -- este nao foi gerado direito.' -ForegroundColor Red
-    exit 2
+# Onde eu escrevo os comandos. Arquivo publico do GitHub: da para LE-lo sem
+# senha, mas so eu escrevo. Se um dia eu mudar de branch, so mudo esta linha.
+$Canal = $env:FNF_CANAL
+if ([string]::IsNullOrWhiteSpace($Canal)) {
+    $Canal = 'https://raw.githubusercontent.com/grasshopperconta-a11y/PS2Projects/arena/4c50659b-ps2projects/canal/comandos.txt'
 }
 
-$Intervalo = 2      # segundos entre consultas
-$Teto = 2MB         # acima disso, a saida sobe em pedacos
-$TetoChunk = 256KB  # tamanho de cada pedaco
+# Pasta onde este programa mora. Os resultados vao para ./resultados.
+$Aqui = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PastaResultado = Join-Path $Aqui 'resultados'
+$ArqEstado      = Join-Path $Aqui 'estado.txt'
+$ArqToken       = Join-Path $Aqui 'token.txt'
 
+$Intervalo = 5        # segundos entre consultas
+$Teto = 2MB           # acima disso, avisa que a saida foi truncada no console
+$TempoLimitePadrao = 180
+
+New-Item -ItemType Directory -Force -Path $PastaResultado | Out-Null
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 # ---------------------------------------------------------------- travadura
@@ -80,141 +79,190 @@ function Test-Protegido([string]$cmd) {
 }
 
 # ---------------------------------------------------------------- helpers
-function Send-Json([string]$rota, $obj) {
-    $corpo = $obj | ConvertTo-Json -Depth 6 -Compress
-    $bytes = [Text.Encoding]::UTF8.GetBytes($corpo)
+function Get-Canal {
+    # O "?cb=" eh para furar o cache do CDN do GitHub. Sem isso, depois que
+    # eu escrevo um comando novo, o seu PC poderia ficar lendo a copia velha
+    # por alguns minutos.
+    $url = $Canal
+    if ($url -notmatch '\?') { $url = $url + '?cb=' } else { $url = $url + '&cb=' }
+    $url = $url + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     try {
-        $resp = Invoke-WebRequest -Uri ($Ponte.TrimEnd('/') + $rota) `
-            -Method POST -Body $bytes `
-            -ContentType 'application/json; charset=utf-8' `
-            -Headers @{ 'X-Token' = $Token } `
-            -UseBasicParsing -TimeoutSec 30
-        if ([string]::IsNullOrWhiteSpace($resp.Content)) { return $null }
-        return $resp.Content | ConvertFrom-Json
+        $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
+        return $r.Content
     } catch {
         return $null
     }
 }
 
-function Get-Bytes([string]$caminho) {
-    return [IO.File]::ReadAllBytes($caminho)
+function Get-JaRodou {
+    if (Test-Path $ArqEstado) {
+        $v = (Get-Content -Raw -LiteralPath $ArqEstado -ErrorAction SilentlyContinue)
+        if ($v -match '(\d+)') { return [int]$Matches[1] }
+    }
+    return 0
+}
+
+function Set-JaRodou([int]$id) {
+    Set-Content -LiteralPath $ArqEstado -Value $id -Encoding ASCII -NoNewline
 }
 
 # ---------------------------------------------------------------- loop
 Write-Host ''
-Write-Host '  FNF REMOTE - cliente' -ForegroundColor Cyan
-Write-Host '  ponte : ' -NoNewline; Write-Host $Ponte
+Write-Host '  FNF REMOTE - cliente (canal GitHub)' -ForegroundColor Cyan
+Write-Host '  canal : ' -NoNewline; Write-Host $Canal
 Write-Host '  estado: consultando a cada ' -NoNewline; Write-Host $Intervalo -NoNewline; Write-Host ' s'
 Write-Host '  trava : System32 / Windows = NUNCA executa'
+Write-Host '  saida : ' -NoNewline; Write-Host $PastaResultado
 Write-Host '  fechar: so feche a janela se quiser parar'
 Write-Host ''
 
-$rodando = $true
 $falhas = 0
+$jaRodou = Get-JaRodou
+if ($jaRodou -gt 0) {
+    Write-Host ("  voltando de onde parou: ultimo comando rodado foi o #{0}" -f $jaRodou) -ForegroundColor DarkGray
+    Write-Host ''
+}
 
-while ($rodando) {
-    $r = Send-Json '/poll' @{ cliente = 'fnf-windows' }
+while ($true) {
+    $texto = Get-Canal
 
-    if ($null -eq $r) {
+    if ($null -eq $texto) {
         $falhas++
-        if ($falhas % 10 -eq 1) {
-            Write-Host ("[{0:HH:mm:ss}] ponte nao responde (tentativa {1})" -f (Get-Date), $falhas) -ForegroundColor DarkYellow
+        if ($falhas % 12 -eq 1) {
+            Write-Host ("[{0:HH:mm:ss}] nao consegui ler o canal (tentativa {1})" -f (Get-Date), $falhas) -ForegroundColor DarkYellow
         }
         Start-Sleep -Seconds $Intervalo
         continue
     }
     $falhas = 0
 
-    if ($null -eq $r.cmd -or $r.cmd -eq '') {
+    # ---- parse: uma linha "<id>|<comando>", ignora # e vazias
+    $novos = @()
+    foreach ($linha in ($texto -split "`r?`n")) {
+        $l = $linha.Trim()
+        if ($l -eq '' -or $l.StartsWith('#')) { continue }
+        $i = $l.IndexOf('|')
+        if ($i -le 0) { continue }
+        $idTxt = $l.Substring(0, $i).Trim()
+        $cmd = $l.Substring($i + 1).Trim()
+        if ($cmd -eq '') { continue }
+        $id = 0
+        if (-not [int]::TryParse($idTxt, [ref]$id)) { continue }
+        # id tem de ser >= 1: o estado inicial eh 0, e a comparacao abaixo eh
+        # "<=" -- um id 0 (ou negativo) nunca passaria e eu ia achar que o
+        # comando tinha sumido. Sem essa linha, id 0 eh um comando fantasma.
+        if ($id -lt 1) { continue }
+        if ($id -le $jaRodou) { continue }
+        $novos += [pscustomobject]@{ id = $id; cmd = $cmd }
+    }
+
+    if ($novos.Count -eq 0) {
         Start-Sleep -Seconds $Intervalo
         continue
     }
 
-    $id = [int]$r.id
-    $cmd = [string]$r.cmd
-    $limite = 120
-    if ($r.PSObject.Properties['tempo_limite']) { $limite = [int]$r.tempo_limite }
+    $novos = $novos | Sort-Object id
 
-    Write-Host ("[{0:HH:mm:ss}] comando #{1}: {2}" -f (Get-Date), $id, $cmd) -ForegroundColor Green
+    foreach ($job in $novos) {
+        $id = $job.id
+        $cmd = $job.cmd
 
-    # ---- trava de seguranca: antes de qualquer execucao
-    $atingiu = Test-Protegido $cmd
-    if ($atingiu) {
-        Write-Host '           RECUSADO: mexe em area protegida' -ForegroundColor Red
-        Send-Json '/done' @{
-            id  = $id
-            rc  = 99
-            out = ''
-            err = ("RECUSADO PELO CLIENTE: o comando menciona '{0}', que eh area protegida "
-                   + "(System32 / Windows). Nada foi executado no seu PC." -f $atingiu)
-        } | Out-Null
-        continue
-    }
+        Write-Host ("[{0:HH:mm:ss}] comando #{1}: {2}" -f (Get-Date), $id, $cmd) -ForegroundColor Green
 
-    # ---- prefixo: CMD: manda para o Prompt de Comando, o resto para o PowerShell
-    $shell = 'powershell.exe'
-    $arg = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'
-    if ($cmd -match '^\s*CMD:\s*(.*)$') {
-        $shell = 'cmd.exe'
-        $arg = '/c'
-        $cmd = $Matches[1]
-    } elseif ($cmd -match '^\s*PS:\s*(.*)$') {
-        $cmd = $Matches[1]
-    }
-
-    $arqOut = [IO.Path]::GetTempFileName()
-    $arqErr = [IO.Path]::GetTempFileName()
-    $rc = -1
-
-    try {
-        $pi = Start-Process -FilePath $shell -ArgumentList @($arg, $cmd) `
-            -WorkingDirectory $env:USERPROFILE `
-            -NoNewWindow -PassThru `
-            -RedirectStandardOutput $arqOut -RedirectStandardError $arqErr
-
-        $pi | Wait-Process -Timeout $limite | Out-Null
-        if (-not $pi.HasExited) {
-            try { $pi.Kill() } catch {}
-            $rc = 124
-            Add-Content -Path $arqErr -Value ("estourou o tempo limite de {0}s" -f $limite) -Encoding UTF8
-        } else {
-            $rc = $pi.ExitCode
+        # ---- trava de seguranca: antes de qualquer execucao
+        $atingiu = Test-Protegido $cmd
+        if ($atingiu) {
+            Write-Host '           RECUSADO: mexe em area protegida' -ForegroundColor Red
+            $txt = ("RECUSADO PELO CLIENTE: o comando menciona '{0}', que eh area protegida "
+                    + "(System32 / Windows). Nada foi executado no seu PC." -f $atingiu)
+            Set-Content -LiteralPath (Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)) -Value $txt -Encoding UTF8
+            # marca como rodado mesmo recusado, senao ele tentaria de novo para sempre
+            $jaRodou = $id
+            Set-JaRodou $id
+            continue
         }
-    } catch {
-        $rc = 1
-        Add-Content -Path $arqErr -Value ("$($_.Exception.GetType().Name): $($_.Exception.Message)") -Encoding UTF8
-    }
 
-    $txtOut = if (Test-Path $arqOut) { Get-Content -Raw -LiteralPath $arqOut -Encoding UTF8 } else { '' }
-    $txtErr = if (Test-Path $arqErr) { Get-Content -Raw -LiteralPath $arqErr -Encoding UTF8 } else { '' }
+        # ---- prefixo: CMD: manda para o Prompt de Comando, o resto para o PowerShell
+        $shell = 'powershell.exe'
+        $arg = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'
+        if ($cmd -match '^\s*CMD:\s*(.*)$') {
+            $shell = 'cmd.exe'
+            $arg = '/c'
+            $cmd = $Matches[1]
+        } elseif ($cmd -match '^\s*PS:\s*(.*)$') {
+            $cmd = $Matches[1]
+        }
 
-    # ---- saida grande? sobe em pedacos e so manda a referencia
-    $bOut = [Text.Encoding]::UTF8.GetBytes([string]$txtOut)
-    if ($bOut.Length -gt $Teto) {
-        $up = Send-Json '/chunk/start' @{ nome = ("cmd{0}.log" -f $id) }
-        if ($up -and $up.upload) {
-            $i = 0
-            while ($i -lt $bOut.Length) {
-                $n = [Math]::Min($TetoChunk, $bOut.Length - $i)
-                $fatia = $bOut[$i..($i + $n - 1)]
-                Send-Json '/chunk' @{ upload = $up.upload; dados = [Convert]::ToBase64String($fatia) } | Out-Null
-                $i += $n
+        $arqOut = [IO.Path]::GetTempFileName()
+        $arqErr = [IO.Path]::GetTempFileName()
+        $rc = -1
+
+        try {
+            $pi = Start-Process -FilePath $shell -ArgumentList @($arg, $cmd) `
+                -WorkingDirectory $env:USERPROFILE `
+                -NoNewWindow -PassThru `
+                -RedirectStandardOutput $arqOut -RedirectStandardError $arqErr
+
+            $pi | Wait-Process -Timeout $TempoLimitePadrao | Out-Null
+            if (-not $pi.HasExited) {
+                try { $pi.Kill() } catch {}
+                $rc = 124
+                Add-Content -Path $arqErr -Value ("estourou o tempo limite de {0}s" -f $TempoLimitePadrao) -Encoding UTF8
+            } else {
+                $rc = $pi.ExitCode
             }
-            $fim = Send-Json '/chunk/finish' @{ upload = $up.upload }
-            $txtOut = ("[saida grande: {0} bytes, subiu em pedacos -> {1}]" -f $bOut.Length, $fim.caminho)
+        } catch {
+            $rc = 1
+            Add-Content -Path $arqErr -Value ("$($_.Exception.GetType().Name): $($_.Exception.Message)") -Encoding UTF8
         }
+
+        $txtOut = if (Test-Path $arqOut) { Get-Content -Raw -LiteralPath $arqOut -Encoding UTF8 } else { '' }
+        $txtErr = if (Test-Path $arqErr) { Get-Content -Raw -LiteralPath $arqErr -Encoding UTF8 } else { '' }
+
+        # ---- monta o arquivo de resultado, com o comando junto
+        $relatorio = @()
+        $relatorio += "comando #$id"
+        $relatorio += "rodado em: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        $relatorio += "comando  : $cmd"
+        $relatorio += "codigo   : $rc"
+        $relatorio += "-------- saida --------"
+        if ([string]$txtOut) { $relatorio += $txtOut.TrimEnd() }
+        if ([string]$txtErr) {
+            $relatorio += "-------- erros --------"
+            $relatorio += $txtErr.TrimEnd()
+        }
+        $corpo = $relatorio -join "`r`n"
+
+        $arqRel = Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)
+        Set-Content -LiteralPath $arqRel -Value $corpo -Encoding UTF8
+
+        Write-Host ("           rc={0}, {1} bytes -> {2}" -f $rc, $corpo.Length, (Split-Path -Leaf $arqRel)) -ForegroundColor DarkGray
+
+        # ---- console: mostra a saida (curta) para voce poder ler ou copiar
+        $bOut = [Text.Encoding]::UTF8.GetByteCount([string]$txtOut)
+        if ($bOut -le $Teto) {
+            $linhas = ($txtOut -split "`r?`n")
+            if ($linhas.Count -le 40) {
+                foreach ($ln in $linhas) { if ($ln -ne '') { Write-Host "           $ln" } }
+            } else {
+                Write-Host "           (saida com $($linhas.Count) linhas; veja o arquivo)"
+            }
+        } else {
+            Write-Host "           (saida com $bOut bytes; veja o arquivo)"
+        }
+        if ([string]$txtErr) {
+            Write-Host '           --- erros ---' -ForegroundColor DarkYellow
+            $elinhas = ($txtErr -split "`r?`n")
+            if ($elinhas.Count -le 20) {
+                foreach ($ln in $elinhas) { if ($ln -ne '') { Write-Host "           $ln" -ForegroundColor DarkYellow } }
+            } else {
+                Write-Host "           ($($elinhas.Count) linhas de erro; veja o arquivo)" -ForegroundColor DarkYellow
+            }
+        }
+
+        $jaRodou = $id
+        Set-JaRodou $id
     }
 
-    Write-Host ("           rc={0}, {1} bytes de saida" -f $rc, $bOut.Length) -ForegroundColor DarkGray
-
-    Send-Json '/done' @{
-        id  = $id
-        rc  = $rc
-        out = [string]$txtOut
-        err = [string]$txtErr
-    } | Out-Null
-
-    Remove-Item -LiteralPath $arqOut, $arqErr -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds $Intervalo
 }
-
-Write-Host 'cliente encerrado.'
