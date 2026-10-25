@@ -128,6 +128,15 @@ def normaliza(cmd):
     n = cmd.lower()
     for ch in (" ", "\t", "\n", "\r"):
         n = n.replace(ch, "")
+    # `2>/dev/null` e `>/dev/null` sao o idioma MAIS COMUM do shell -- e a trava
+    # bloqueava a substring "/dev/", que esta dentro de "/dev/null". Resultado:
+    # todo comando que silenciasse uma saida era recusado, e o comando #1 do
+    # canal morreu exatamente assim. O alvo da regra eh dispositivo de bloco
+    # (/dev/sda, /dev/nvme, /dev/zero), nunca o sumidouro. Tirar o sumidouro
+    # antes de comparar resolve o falso positivo sem afrouxar o resto: "dd
+    # if=/dev/zero" continua recusado, porque la o "/dev/" que sobra eh de um
+    # dispositivo de verdade.
+    n = n.replace("/dev/null", "")
     return n
 
 

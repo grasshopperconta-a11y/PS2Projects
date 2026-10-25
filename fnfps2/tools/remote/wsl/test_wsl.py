@@ -134,6 +134,27 @@ for seguro in ["ls -la", "make -j4", "cat file.txt", "git status",
 # `rm -r f` apaga a pasta "f": comando legitimo. Uma trava que recusasse
 # isso impossibilitaria o trabalho -- e trava assim eh pior que trava nenhuma.
 
+# ---------------------------------------------------------- 2b. o falso positivo
+# O idioma mais comum do shell eh silenciar uma saida com 2>/dev/null. A trava
+# bloqueava a substring "/dev/", que esta DENTRO de "/dev/null": com isso, todo
+# comando com redirecionamento era recusado, e o #1 do canal WSL morreu assim.
+# Regressao medida, nao hipotetica: o comando de prova de vida do canal foi
+# recusado three vezes antes de alguem ler a lista de padrões.
+print("\n== 2b. /dev/null NAO pode ser area protegida ==")
+for comum in ["git --version 2>/dev/null || echo 'git: AUSENTE'",
+              "ls -d /opt/ps2dev 2>/dev/null || echo 'ps2dev: AUSENTE'",
+              "which gcc make 2>/dev/null",
+              "echo oi > /dev/null",
+              "make -j4 > /dev/null 2>&1",
+              "curl -sL -o /tmp/x URL > /dev/null",
+              "tar -xJf a.tar.xz -C ~/ps2dev 2>/dev/null"]:
+    ok(c.protegido(comum) is None, "deixa passar: %s" % comum[:44])
+# E o que a regra existe para impedir CONTINUA impedido:
+for bloqueado in ["dd if=/dev/zero of=/dev/sda", "dd if=/dev/sda of=/tmp/img",
+                  "mkfs.ext4 /dev/sdb1", "cat /dev/sda > /tmp/copia",
+                  "echo x > /dev/sda"]:
+    ok(c.protegido(bloqueado) is not None, "recusa: %s" % bloqueado[:44])
+
 # -------------------------------------------------------------- 3. publicacao
 print("\n== 3. publicacao (a licao do #52) ==")
 PORTA = 8801
