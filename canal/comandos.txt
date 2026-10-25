@@ -169,7 +169,9 @@
 # O lote anterior inteiro falhou por um motivo so: a unidade F: nao existia.
 # Nao era codigo errado, era o pendrive desconectado. Agora estah plugado.
 45|CMD: dir F:\
-46|PS: $d = Get-ChildItem $env:USERPROFILE\Downloads -Directory -Depth 4 -Filter FNFPS2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($d) { 'achou: ' + $d.FullName; 'arquivos: ' + (Get-ChildItem $d.FullName -Recurse -File -ErrorAction SilentlyContinue).Count; Copy-Item -Path $d.FullName -Destination 'F:\FNFPS2' -Recurse -Force; 'COPIADO para F:\FNFPS2' } else { 'NAO achou a pasta FNFPS2 em Downloads' }
-47|PS: $e = Get-ChildItem $env:USERPROFILE\Downloads -File -Depth 4 -Filter FNF_PS2.ELF -ErrorAction SilentlyContinue | Select-Object -First 1; if ($e) { 'achou: ' + $e.FullName + '  ' + $e.Length; Copy-Item -Path $e.FullName -Destination 'F:\FNF_PS2_0.2.112.ELF' -Force; 'ELF copiado' } else { 'ELF nao achado em Downloads' }
-48|CMD: dir F:\FNFPS2\assets
-49|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
+
+# --- lote 16: consertar o pendrive -- UM comando, autocontido ------------
+# O lote anterior inteiro falhou por um motivo so: a unidade F: nao
+# existia. O pendrive estava desconectado. Com '@modo ultimo' ligado, so
+# este comando roda -- entao ele faz a copia inteira e ja se verifica.
+50|PS: $r=@(); $d = Get-ChildItem $env:USERPROFILE\Downloads -Directory -Depth 4 -Filter FNFPS2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($d) { $r += 'origem FNFPS2: ' + $d.FullName; Copy-Item -Path $d.FullName -Destination 'F:\FNFPS2' -Recurse -Force; $r += 'FNFPS2 copiado para F:\' } else { $r += 'FALTA a pasta FNFPS2 em Downloads' }; $e = Get-ChildItem $env:USERPROFILE\Downloads -File -Depth 4 -Filter FNF_PS2.ELF -ErrorAction SilentlyContinue | Select-Object -First 1; if ($e) { Copy-Item -Path $e.FullName -Destination 'F:\FNF_PS2_0.2.112.ELF' -Force; $r += 'ELF copiado: ' + $e.Length + ' bytes' } else { $r += 'ELF nao achado em Downloads' }; $r += 'charts em F:\FNFPS2\assets: ' + (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count; $r += 'arquivos soltos em assets: ' + (Get-ChildItem F:\FNFPS2\assets -File -ErrorAction SilentlyContinue).Count; $r -join [char]10
