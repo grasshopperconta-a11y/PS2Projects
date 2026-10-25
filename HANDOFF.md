@@ -119,6 +119,34 @@ O canal ntfy (`fnf-ps2-wsl-*`) continua existindo, mas **não entrega o que se
 promete**: é assíncrono por natureza, e eu não consigo lê-lo do sandbox. Para
 compilar e testar, use o conector do Drive.
 
+### ✅ Ponte síncrona — mando o comando e leio a resposta no mesmo turno
+
+Em `fnfps2/tools/remote/sync/`. Inverte o papel do cliente anterior: **o servidor
+fica de pé aqui** e o agente no PC do usuário é quem conecta.
+
+```
+eu -> POST /enqueue {cmd}              (guarda na fila, devolve o id)
+PC -> GET  /next                       (o agente poleia, pega o comando)
+PC -> POST /result {id, rc, out, err}  (executou e devolveu)
+eu -> GET  /result/<id>                (leio o resultado, ainda no turno)
+```
+
+**Latência medida da ponte: 0,40 s.** Para um build de 17 s, a espera dominante
+é o build, não a ponte. Só stdlib dos dois lados.
+
+O usuário roda `bash iniciar-ponte.sh` (endereço já embutido) e deixa a janela
+aberta. Não instala nada, não precisa de senha, não abre porta no PC dele.
+
+Duas lições que ficaram no código e no teste:
+
+- **A trava não pode barrar `/dev/null`.** A entrada `/dev/` existe para impedir
+  `dd if=/dev/sda`, mas é substring de `/dev/null` — e `2>/dev/null` é o idioma
+  mais comum do shell. Foi assim que o comando #1 do canal anterior morreu. A
+  `normaliza()` tira o sumidouro antes de comparar.
+- **A página de status quebrou em produção e o teste não pegou.** Usava
+  formatação por `%` e o CSS tem `width:100%`. O teste só batia nos endpoints
+  de API. Corrigido com concatenação, e o teste bate em `GET /` de propósito.
+
 ### Ordem obrigatória antes de entregar uma build
 
 1. compilar **sem warnings**;
