@@ -5,19 +5,37 @@ falta descobrir**. Nada aqui é palpite.
 
 ---
 
-## P0 — Confirmar que a 0.2.111 funciona no console
+## P0 — Rodar a 0.2.112 no console e trazer o log
 
-**Por que é prioridade zero:** as builds 0.2.108, 0.2.109 e 0.2.110 não abriram.
-A 0.2.111 corrige a causa raiz do log vazio (reabertura tardia do arquivo) e
-adiciona marca por quadro. **Nenhuma dessas duas coisas foi confirmada em
-hardware.** Até ser, nenhuma outra afirmação sobre o estado do projeto é segura.
+**Estado em 2026-10-25: o pendrive está CONSERTADO e conferido byte a byte.**
+O que impedia o jogo de rodar era o **nome do executável**: o canal #50 tinha
+copiado o ELF para `F:\FNF_PS2_0.2.112.ELF`, mas o nome tem de ser exatamente
+`F:\FNF_PS2.ELF`. Corrigido pelo canal #55.
 
-**O que pedir ao usuário:** rodar a 0.2.111 e devolver dois arquivos:
+Auditoria remota completa (`F:`), tudo conferido:
 
-- `mass:/FNFPS2/FNF_COLHEITA.txt` — se vier com conteúdo, o log funciona;
-- `mass:/FNFPS2/BOOT.txt` — diz em qual quadro o jogo parou, se parou.
+| Item | Estado |
+|---|---|
+| `F:\FNFPS2\` | ✅ 340 arquivos |
+| charts | ✅ 324 (= 81 × 4 layouts de nome) |
+| `menu_cache.rle` | ✅ 1.587.561 B, sha256 `cd27d719…d351` — bloco 4 corrigido |
+| `F:\FNF_PS2.ELF` | ✅ 5.264.808 B, sha256 `095a5e0b…74faa` |
+| `LEIA-ME.txt` | ✅ na raiz |
+| ZIP truncado de 2.475 B | ✅ removido |
 
-**Como interpretar:**
+**O que falta — uma coisa só:** rodar o jogo no PS2 com este pendrive, entrar no
+menu, esperar alguns segundos e sair. Isso cria `mass:/FNFPS2/FNF_COLHEITA.txt`
+e `mass:/FNFPS2/BOOT.txt`.
+
+**A colheita já está pronta:** o canal #56 analisa o log **no PC** e devolve só
+um resumo compacto (o cliente fatia a saída em pedaços de 2.000 caracteres e o
+log tem ~20.000 linhas). Ele mede: sprites por quadro, qualquer sprite com
+geometria **fora** da faixa 56..391, geometrias na borda de baixo
+(gsy1 entre 384,5 e 391,5 — as 7 linhas abaixo do último botão), sprites
+esticados (`vy_span != h`) e com escala `h/vh != 1`. Rodou limpo (rc=0); só
+ainda não havia log para ler.
+
+**Como interpretar o `BOOT.txt`:**
 
 | `BOOT.txt` diz | Significa |
 |---|---|
@@ -123,10 +141,10 @@ zero e dizem se o chart carregou.
 O usuário pediu explicitamente **otimizar o máximo possível no console
 original**. Frentes já identificadas:
 
-- **O menu dobra as chamadas de desenho** (P1). Corrigir isso é otimização de
-  graça.
 - **O log escreve a cada quadro.** `telemetry_line()` já acumula, e o `fsync` é
   a cada 30 quadros. Se o custo ainda pesar, subir o intervalo.
+  (A ideia antiga de "o menu dobra as chamadas de desenho" como ganho grátis
+  está **descartada** — ver P1: o menu desenha cada item uma vez só.)
 - **VRAM:** `tools/vram_budget.py` existe para medir. Rodar e ver a margem.
 
 ---
