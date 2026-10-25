@@ -63,3 +63,16 @@
 20|CMD: dir F:\FNFPS2
 21|CMD: dir F:\FNFPS2\assets
 22|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
+
+# --- lote 9: reler os resultados que jah passaram ---------------------------
+# O cliente rodou #17-#22 e os resultados ficaram em arquivo. Como o usuario
+# reiniciou a janela, o historico rolou e ele nao consegue mais copiar. Aqui
+# eu mando o cliente ler de volta -- cada resultado em um comando separado,
+# para que um eventual erro em um nao esconda os outros.
+23|CMD: dir C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados
+24|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-17.txt
+25|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-18.txt
+26|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-19.txt
+27|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-20.txt
+28|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-21.txt
+29|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-22.txt
