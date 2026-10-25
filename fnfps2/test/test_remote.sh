@@ -121,11 +121,14 @@ def parse(texto, ja_rodou=0):
         novos.append((nid, cmd))
     return sorted(novos)
 
-# o arquivo REAL do canal, no repo
+# o arquivo REAL do canal, no repo. Ele PODE ter comandos ativos -- isso eh
+# normal e ate desejavel. O que nao pode eh o parser engasgar nele.
 real = open("../canal/comandos.txt", encoding="utf-8").read()
 r = parse(real)
-assert r == [], "o canal real nao deveria ter comando ativo, tem: %r" % (r,)
-print("  PASSA  canal real: so comentarios, nenhum comando ativo")
+for nid, cmd in r:
+    assert nid >= 1, "canal real tem id < 1: %r" % nid
+    assert cmd.strip() != "", "canal real tem comando vazio no id %d" % nid
+print("  PASSA  canal real: parseia limpo, %d comando(s) ativo(s)" % len(r))
 
 casos = [
     # (texto, ja_rodou, esperado)
