@@ -44,6 +44,35 @@ ainda não havia log para ler.
 | para num `passo N: FRAME,k,...` | travou no quadro k |
 | arquivo não existe | o pendrive não montou — problema de install ou de `reset_iop()` |
 
+### ⚠️ Atualização de 2026-10-25 — duas coisas mudaram
+
+**1. A hipótese "assets ausentes" está morta.** O canal #58 auditou o pendrive
+inteiro: os 16 assets existem, e os 12 que têm tamanho fixo no código têm o
+tamanho **exato**. Nenhum falta. O jogo congela **dentro do quadro 0**, logo
+depois de `F0_FRAMEBUFFER_SET`, que é o último marco que o `BOOT.txt` escreveu.
+
+**2. A colheita vazia tinha causa própria, já corrigida (commit `00fe473`).** O
+`usb_ready` só era ligado no `telemetry_init()` quando a *primeira* tentativa de
+abrir o log dava certo; a abertura tardia abria o descritor mas nunca ligava a
+bandeira, e o `O_TRUNC` zerava o arquivo para sempre. Ver
+`fnfps2/docs/BUG_usb_ready_abertura_tardia.md`. **A colheita vazia não era
+sintoma do travamento** — os dois escritores falhavam por motivos diferentes.
+
+**Os marcos novos do quadro 0** dizem em qual chamada exata o jogo pendurou. A
+ordem depois de `F0_FRAMEBUFFER_SET` é: `F0_DL_DUMP_BEGIN`, `F0_DL_DUMP_DONE`,
+`F0_TEL_FRAME_BEGIN`, `F0_TEL_FRAME_DONE`, `F0_TEL_STATE_DONE`,
+`F0_TELEMETRY_FLUSH_DONE`, `F0_FRAME0_FIM`.
+
+| Onde o `BOOT.txt` parar | Significa |
+|---|---|
+| em `F0_FRAMEBUFFER_SET` (ou antes) | nem `F0_DL_DUMP_BEGIN` saiu: a escrita no pendrive parou — o dispositivo caiu |
+| em `F0_DL_DUMP_BEGIN` | pendurou **dentro** de `dl_dump()` |
+| em `F0_DL_DUMP_DONE` | pendurou em `telemetry_frame()` ou `telemetry_state()` |
+| em `F0_TEL_FRAME_DONE` | pendurou em `telemetry_state()` |
+| em `F0_TEL_STATE_DONE` | pendurou em `telemetry_flush()` |
+| em `F0_TELEMETRY_FLUSH_DONE` | pendurou em `av_trace_capture()` |
+| em `F0_FRAME0_FIM` | o quadro 0 terminou; o problema está no quadro 1 |
+
 ---
 
 ## P1 — ❌ DESCARTADO: "o menu desenha cada item duas vezes" NÃO EXISTE

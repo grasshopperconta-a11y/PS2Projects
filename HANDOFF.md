@@ -18,8 +18,8 @@ C, com o ps2sdk. Compilado para MIPS R5900 (EE), rodando em console real
 (SCPH-90006) a partir de pendrive.
 
 **Repositório:** `grasshopperconta-a11y/PS2Projects`
-**Branch:** `arena/4c50659b-ps2projectes` — **fixa, não renomeie, não troque.**
-**Commit:** `7037d61`
+**Branch:** `arena/4c50659b-ps2projects` — **fixa, não renomeie, não troque.**
+**Commit:** `00fe473`
 
 ---
 
@@ -134,10 +134,37 @@ o usuário reportou, sem ele precisar descrever nada. Use sempre.
 
 ## 6. Próximos passos, em ordem
 
-1. **Confirmar em hardware que a 0.2.112 abre e que o log sai LIMPO.** Sem isso,
-   nada mais pode ser afirmado. Peça ao usuário: rodar, e mandar
-   `FNF_COLHEITA.txt` + `BOOT.txt`. A 0.2.112 é a primeira que escreve **uma
-   rodada por arquivo** (`O_TRUNC`); as anteriores acumulavam.
+1. **Compilar a build nova no PC do usuário (WSL) e rodar no console.** A
+   hipótese "assets do título ausentes" foi **refutada por medição** (canal
+   #58: todos os 16 assets existem no pendrive com o tamanho exato que o código
+   exige). O que se sabe agora, com fonte no código: o jogo congela **dentro do
+   quadro 0**, logo depois de `F0_FRAMEBUFFER_SET` — que é o último marco que o
+   `BOOT.txt` conseguiu escrever.
+
+   **E havia um defeito independente, já corrigido no commit `00fe473`:** o
+   `usb_ready` só era ligado dentro do `telemetry_init()`, e só quando a
+   *primeira* tentativa de abrir o log dava certo. A "segunda chance" (uma vez
+   por quadro, para o caso de o pendrive montar depois) abria o descritor mas
+   nunca ligava a bandeira — então o arquivo era truncado para 0 bytes pelo
+   `O_TRUNC` e **nunca mais recebia um byte**. É por isso que o
+   `FNF_COLHEITA.txt` vinha vazio enquanto o `BOOT.txt`, que abre o descritor
+   próprio, funcionava. Detalhe em
+   `fnfps2/docs/BUG_usb_ready_abertura_tardia.md`.
+
+   Ou seja: **a colheita vazia não era sintoma do travamento.** Os dois
+   escritores falhavam por motivos diferentes, e eu estava lendo um como
+   sintoma do outro.
+
+   A build nova tem marcadores cobrindo o resto do quadro 0. A ordem depois de
+   `F0_FRAMEBUFFER_SET` é: `F0_DL_DUMP_BEGIN`, `F0_DL_DUMP_DONE`,
+   `F0_TEL_FRAME_BEGIN`, `F0_TEL_FRAME_DONE`, `F0_TEL_STATE_DONE`,
+   `F0_TELEMETRY_FLUSH_DONE`, `F0_FRAME0_FIM`. Onde o `BOOT.txt` parar diz
+   exatamente em qual chamada o jogo pendurou.
+
+   ⚠️ **Cuidado que já me custou retrabalho:** `telemetry_frame(frame_no++,...)`
+   incrementa o contador, então os marcadores *depois* dessa chamada têm de
+   testar `frame_no==1`, não `==0`. Com `==0` eles nunca disparavam e a build
+   não coletava nada.
 2. **Investigar os itens quebrados ao voltar do modo história.** Localmente o
    menu volta idêntico (2 visitas, mesmas 4 posições), então o sintoma do
    usuário não é reproduzível no harness. **Perguntar o que exatamente está
@@ -152,7 +179,7 @@ o usuário reportou, sem ele precisar descrever nada. Use sempre.
    personagens não animando, música toca.
 6. **Otimização** — objetivo declarado do usuário. Ver `PROXIMOS_PASSOS.md` P5.
 
-### ⚠️ Duas "descobertas" minhas que eram FALSAS — não repetir
+### ⚠️ Três "descobertas" minhas que eram FALSAS — não repetir
 
 - **"O menu desenha cada item duas vezes."** Falso. Vinha de ler um log com
   quatro execuções acumuladas. Um quadro do estado 6 tem 5 sprites: 1 fundo e 4
@@ -160,6 +187,10 @@ o usuário reportou, sem ele precisar descrever nada. Use sempre.
 - **"O menu volta com cara diferente depois do roteiro."** Falso. A contagem por
   quadro varia por causa do piscar do confirmar (16 piscadas). Comparando o
   conjunto de posições por visita, as 2 visitas são idênticas. P2.
+- **"Os assets do título estão ausentes ou corrompidos."** Falso, e refutado por
+  medição: o canal #58 auditou o pendrive e todos os 16 assets existem, 12 com o
+  tamanho **exato** que o código exige. Era um palpite apresentado como
+  hipótese, e a medição o matou. **Não insistir nela.**
 
 A lição das duas: **o log tem de ser lido por rodada, e a contagem por quadro
 não é medida de nada.** `tools/analisa_log.py` agora faz as duas coisas certo, e
