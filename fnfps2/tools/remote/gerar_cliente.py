@@ -65,21 +65,29 @@ Quando eu mando um comando, aparece uma linha VERDE com o comando e, depois,
 o resultado. Se nao aparecer nada por minutos, eh normal: eu so mando comando
 quando preciso.
 
-COMO EU RECEBO A SAIDA
-----------------------
-Cada comando gera um arquivo em `resultados\\`, com este formato:
+COMO EU RECEBO A SAIDA  (agora eh automatico)
+---------------------------------------------
+Eu mando o comando, o programa executa, PUBLICCA a saida num servico de
+mensagens, e eu leio na hora. Voce nao precisa fazer NADA: nao copia, nao
+arrasta, nao me manda nada.
 
-    resultado-1.txt
-    resultado-2.txt
-    ...
+O arquivo em `resultados\\` continua sendo gerado -- eh so uma copia local, que
+fica ai se um dia voce quiser conferir o que rodou.
 
-Dentro vem o comando, a data, o codigo de saida, a saida e os erros.
+O endereco desse servico NAO fica dentro do programa. Ele vem do proprio canal
+de comandos, numa linha `@volta <endereco>`. Se um dia esse endereco vazar, eu
+troco a linha no canal e o programa passa a usar o novo sozinho -- nao precisa
+reinstalar nada.
 
-Para me entregar: ARRASTE A PASTA `resultados` PARA O GOOGLE DRIVE
-(pelo navegador, como se fosse subir qualquer arquivo). Eu leio de la.
+E nao ha risco por essa porta: ela eh so de saida. O canal de COMANDOS continua
+sendo o arquivo do GitHub, que so eu escrevo. Quem descobrisse o endereco de
+volta no maximo conseguiria publicar resultado falso -- nao consegue escrever
+comandos, entao nao pode fazer nada rodar no seu PC.
 
-Se a saida for curta, voce tambem pode so copiar o que apareceu na janela
-preta e colar aqui -- as duas formas funcionam.
+COMO LER O QUE RODOU (se quiser)
+--------------------------------
+Se tiver curiosidade, abra `resultados\\resultado-1.txt` e os seguintes. Dentro
+vem o comando, a data, o codigo de saida, a saida e os erros.
 
 SE FECHAR E REABRIR
 -------------------

@@ -17,6 +17,22 @@
     Fechou e reabriu? Funciona igual. O programa guarda qual comando ja
     rodou, entao nao repete nada.
 
+    CANAL DE VOLTA (novo):
+        Alem de rodar o comando, o programa PUBLICAA a saida num servico de
+        mensagens (ntfy.sh) que eu leio direto. Eu mando o comando, ele
+        executa, publica, e eu leio na mesma resposta -- sem voce precisar
+        copiar nada.
+
+        O endereco desse canal de volta NAO fica neste arquivo: ele vem do
+        proprio canal de comandos, numa linha '@volta <url>'. Se um dia esse
+        endereco vazar, eu troco la e o programa passa a usar o novo sozinho.
+
+        Nao precisa de senha, e nao ha risco: esse canal eh so de saida. O
+        canal de COMANDOS continua sendo este arquivo do GitHub, que so eu
+        escrevo. Quem descobrisse o endereco de volta no maximo conseguiria
+        publicar resultado falso -- nao consegue escrever comandos, entao nao
+        pode fazer nada rodar no seu PC.
+
     TRAVA DE SEGURANCA (a que voce pediu):
         Este programa RECUSA executar qualquer comando que tente mexer na
         pasta System32 (ou SysWOW64, ou na pasta Windows). Nao eh aviso: ele
@@ -43,6 +59,12 @@ $ArqToken       = Join-Path $Aqui 'token.txt'
 $Intervalo = 5        # segundos entre consultas
 $Teto = 2MB           # acima disso, avisa que a saida foi truncada no console
 $TempoLimitePadrao = 180
+
+# Canal de volta: onde publicar a saida para eu ler. Vem do canal de comandos
+# (linha '@volta <url>'). Fica vazio ateh o canal mandar um -- assim o nome nao
+# estah gravado neste arquivo.
+$Volta = ''
+$TamanhoPedaco = 3500   # ntfy rejeita corpo grande; fatio em pedacos deste tamanho
 
 New-Item -ItemType Directory -Force -Path $PastaResultado | Out-Null
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -106,11 +128,47 @@ function Set-JaRodou([int]$id) {
     Set-Content -LiteralPath $ArqEstado -Value $id -Encoding ASCII -NoNewline
 }
 
+# ---------------------------------------------------------------- canal de volta
+# Publica a saida de um comando para eu ler. Falhar aqui NAO pode derrubar o
+# cliente: se o servico estiver fora do ar, eu apenas nao leio aquele resultado
+# -- o arquivo resultado-<id>.txt continua lah, e o canal segue.
+function Publicar-Volta([string]$url, [string]$texto) {
+    if ([string]::IsNullOrWhiteSpace($url)) { return }
+    if ($null -eq $texto) { $texto = '' }
+
+    # ntfy rejeita corpo grande. Fatio em pedacos e numero cada um, para eu
+    # remontar na ordem certa mesmo que cheguem fora de ordem.
+    $pedacos = @()
+    if ($texto.Length -eq 0) {
+        $pedacos += ''
+    } else {
+        for ($i = 0; $i -lt $texto.Length; $i += $TamanhoPedaco) {
+            $n = [Math]::Min($TamanhoPedaco, $texto.Length - $i)
+            $pedacos += $texto.Substring($i, $n)
+        }
+    }
+
+    for ($p = 0; $p -lt $pedacos.Count; $p++) {
+        $corpo = $pedacos[$p]
+        if ($pedacos.Count -gt 1) {
+            $corpo = "[parte $($p + 1)/$($pedacos.Count)]`n" + $corpo
+        }
+        try {
+            Invoke-WebRequest -Uri $url -Method PUT -Body $corpo -UseBasicParsing -TimeoutSec 30 | Out-Null
+        } catch {
+            # Silencio de proposito: um erro de publicacao nao pode poluir o
+            # console nem parar o loop. Se precisar saber, o arquivo de
+            # resultado ainda existe.
+        }
+    }
+}
+
 # ---------------------------------------------------------------- loop
 Write-Host ''
 Write-Host '  FNF REMOTE - cliente (canal GitHub)' -ForegroundColor Cyan
 Write-Host '  canal : ' -NoNewline; Write-Host $Canal
 Write-Host '  estado: consultando a cada ' -NoNewline; Write-Host $Intervalo -NoNewline; Write-Host ' s'
+Write-Host '  volta : a saida eh publicada para eu ler (endereco vem do canal)'
 Write-Host '  trava : System32 / Windows = NUNCA executa'
 Write-Host '  saida : ' -NoNewline; Write-Host $PastaResultado
 Write-Host '  fechar: so feche a janela se quiser parar'
@@ -141,6 +199,21 @@ while ($true) {
     foreach ($linha in ($texto -split "`r?`n")) {
         $l = $linha.Trim()
         if ($l -eq '' -or $l.StartsWith('#')) { continue }
+
+        # ---- diretiva '@volta <url>': muda o canal de volta em qualquer
+        # momento, sem precisar reinstalar o programa. Se um dia o endereco
+        # vazar, eu troco aqui e o cliente passa a usar o novo sozinho.
+        if ($l.StartsWith('@volta ')) {
+            $nv = $l.Substring(6).Trim()
+            if ($nv -ne '') {
+                if ($nv -ne $Volta) {
+                    $Volta = $nv
+                    Write-Host ("[{0:HH:mm:ss}] canal de volta: {1}" -f (Get-Date), $Volta) -ForegroundColor Cyan
+                }
+            }
+            continue
+        }
+
         $i = $l.IndexOf('|')
         if ($i -le 0) { continue }
         $idTxt = $l.Substring(0, $i).Trim()
@@ -190,6 +263,7 @@ while ($true) {
             Write-Host '           RECUSADO: mexe em area protegida' -ForegroundColor Red
             $txt = "RECUSADO PELO CLIENTE: o comando menciona '$atingiu', que eh area protegida (System32 / Windows). Nada foi executado no seu PC."
             Set-Content -LiteralPath (Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)) -Value $txt -Encoding UTF8
+            Publicar-Volta $Volta $txt
             continue
         }
 
@@ -259,6 +333,9 @@ while ($true) {
             $arqRel = Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)
             Set-Content -LiteralPath $arqRel -Value $corpo -Encoding UTF8
 
+            # ---- e agora a volta: publica a saida para eu ler na hora
+            Publicar-Volta $Volta $corpo
+
             Write-Host ("           rc={0}, {1} bytes -> {2}" -f $rc, $corpo.Length, (Split-Path -Leaf $arqRel)) -ForegroundColor DarkGray
 
             # ---- console: mostra a saida (curta) para voce poder ler ou copiar
@@ -298,6 +375,7 @@ while ($true) {
                 $rel += "-------- erro do cliente --------"
                 $rel += "$($_.Exception.GetType().Name): $($_.Exception.Message)"
                 Set-Content -LiteralPath (Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)) -Value ($rel -join "`r`n") -Encoding UTF8
+                Publicar-Volta $Volta ($rel -join "`r`n")
             } catch {}
         }
     }

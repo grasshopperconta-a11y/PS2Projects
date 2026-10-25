@@ -316,6 +316,10 @@ for linha in open("../canal/comandos.txt", encoding="utf-8").read().splitlines()
     l = linha.strip()
     if not l or l.startswith("#"):
         continue
+    # diretiva '@volta <url>' nao eh comando: eh configuracao do canal de volta.
+    # Ignorada aqui (e tambem pelo cliente, que nao ve '|' na linha).
+    if l.startswith("@"):
+        continue
     i = l.find("|")
     if i <= 0:
         print("    linha sem '<id>|': %r" % l); sys.exit(1)
@@ -327,6 +331,62 @@ for linha in open("../canal/comandos.txt", encoding="utf-8").read().splitlines()
 if len(ids) != len(set(ids)):
     print("    ids repetidos: %r" % ids); sys.exit(1)
 print("  PASSA  canal: %d comando(s), ids unicos e numericos" % len(ids))
+PY
+
+echo "== canal de volta: publicacao automatica da saida =="
+python3 - <<'PY' || exit 1
+import re, sys
+src = open("tools/remote/fnf-remote-client.ps1", encoding="utf-8").read()
+erros = []
+
+# (e) a funcao de publicar tem de existir e nao pode deixar escapar erro: se o
+#     servico estiver fora do ar, o cliente tem de continuar vivo. Um erro de
+#     rede nunca pode matar o programa.
+i_func = src.find("function Publicar-Volta")
+if i_func < 0:
+    erros.append("nao existe Publicar-Volta: a saida nao voltaria para mim")
+else:
+    corpo = src[i_func:src.find("\n}", i_func)]
+    if "try {" not in corpo or "catch" not in corpo:
+        erros.append("Publicar-Volta nao tem try/catch: falha de rede mataria o cliente")
+    else:
+        print("  PASSA  Publicar-Volta existe e engole falha de rede")
+
+# (f) a diretiva '@volta' tem de ser lida do canal -- assim o endereco pode ser
+#     trocado sem reinstalar o programa.
+if "StartsWith('@volta ')" not in src:
+    erros.append("o cliente nao le a diretiva '@volta' do canal")
+else:
+    print("  PASSA  diretiva @volta lida do canal (endereco trocavel sem reinstalar)")
+
+# (g) a publicacao tem de acontecer DEPOIS de gravar o resultado.
+i_setcontent = src.find("Set-Content -LiteralPath $arqRel")
+i_pub = src.find("Publicar-Volta $Volta $corpo", i_setcontent)
+if i_setcontent < 0 or i_pub < 0 or i_pub < i_setcontent:
+    erros.append("Publicar-Volta nao eh chamado depois de gravar resultado-<id>.txt")
+else:
+    print("  PASSA  publica a saida depois de gravar o resultado")
+
+# (h) tem de publicar em TODOS os caminhos: normal, RECUSADO e erro do cliente.
+#     Se faltar um, eu fico cego exatamente no caso que preciso ver.
+if src.count("Publicar-Volta $Volta") < 3:
+    erros.append("Publicar-Volta so eh chamado em alguns caminhos: precisa ser "
+                 "no normal, no RECUSADO e no erro do cliente")
+else:
+    print("  PASSA  publica em todos os caminhos (normal, RECUSADO, erro)")
+
+# (i) o endereco do canal de volta NAO pode estar gravado no cliente. Se
+#     estivesse, o nome vazaria dentro do ZIP, que qualquer um pode baixar.
+urls = re.findall(r"https?://[^\s'\"]+", src)
+if any(("ntfy" in u or "npoint" in u) for u in urls):
+    erros.append("endereco do canal de volta estah gravado no cliente: vazaria no ZIP")
+else:
+    print("  PASSA  endereco do canal de volta nao estah no cliente (vem do canal)")
+
+if erros:
+    for e in erros:
+        print("    " + e)
+    sys.exit(1)
 PY
 
 echo ""

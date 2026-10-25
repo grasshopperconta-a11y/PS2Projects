@@ -26,6 +26,16 @@
 # lancar erro. Sucesso aparente com arquivo vazio. BITS nao serve para URL do
 # Google Drive. Invoke-WebRequest informa o status HTTP, aih eu vejo a verdade.
 
+# Canal de VOLTA: onde o cliente publica a saida de cada comando para
+# eu ler na hora, sem voce precisar copiar nada. O endereco fica AQUI e
+# nao no programa: se um dia vazar, eu troco esta linha e o cliente passa
+# a usar o endereco novo sozinho, sem voce reinstalar nada.
+#
+# So de saida: quem descobrisse este endereco no maximo publicaria
+# resultado falso. O canal de COMANDOS eh este arquivo, que so eu
+# escrevo -- nao dah para fazer nada rodar no seu PC por essa porta.
+@volta https://ntfy.sh/fnf-ps2-wgte6e9toi7hjh
+
 # --- comandos ativos abaixo desta linha ---
 
 1|Get-Volume
