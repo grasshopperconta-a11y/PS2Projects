@@ -13,6 +13,19 @@
 # Aspas simples de proposito: aspas duplas dentro de um -Command que jah vem
 # entre aspas confundem o parser.
 
+# --- historico -------------------------------------------------------------
+# 1,2   Get-Volume / dir F:\  -> F: eh o pendrive de 32 GB
+# 3-7   provaram que NAO existe F:\FNFPS2, nem assets, nem charts, nem logs
+# 8     tentou extrair do Downloads -> o ZIP nao estava mais lah
+# 11    BITS baixou 0 byte e ainda disse 'via BITS' (sem erro!)
+# 12-13 assinatura vazia; Expand-Archive falhou com 'Diretorio central corrompido'
+# 14-16 confirmaram: continua sem FNFPS2
+#
+# LICAO DO #11: Start-BitsTransfer cria o arquivo de destino com 0 byte e, se
+# nao consegue seguir a cadeia de redirecionamento do Drive, encerra o job sem
+# lancar erro. Sucesso aparente com arquivo vazio. BITS nao serve para URL do
+# Google Drive. Invoke-WebRequest informa o status HTTP, aih eu vejo a verdade.
+
 # --- comandos ativos abaixo desta linha ---
 
 1|Get-Volume
@@ -23,28 +36,30 @@
 6|CMD: dir /s /b F:\FNF_COLHEITA.txt
 7|CMD: dir /s /b F:\BOOT.txt
 8|PS: $z = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -Filter FNF_PS2_0.2.112_PENDRIVE.zip -ErrorAction SilentlyContinue | Select-Object -First 1; if ($z) { Expand-Archive -Path $z.FullName -DestinationPath F:\ -Force; 'EXTRAIDO de: ' + $z.FullName } else { 'ZIP do pendrive NAO encontrado em Downloads' }
-
-# --- lote 4: baixar o pendrive DIRETO do Drive ---
-# O #8 falhou porque o ZIP nao estava mais em Downloads. Em vez de pedir para
-# voce baixar de novo, eu baixo: o arquivo eh publico para leitura, entao o
-# Invoke-WebRequest consegue pegar sem login.
-#
-# BITS primeiro (mais rapido e mais resistente em arquivo grande), com
-# Invoke-WebRequest como reserva. Os dois sobrescrevem o destino.
 11|PS: $ProgressPreference='SilentlyContinue'; $u='https://drive.google.com/uc?export=download&confirm=t&id=1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf'; $o='F:\FNF_PS2_PENDRIVE.zip'; try { Start-BitsTransfer -Source $u -Destination $o -ErrorAction Stop; 'via BITS' } catch { Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing; 'via Invoke-WebRequest' }; 'tamanho: '+(Get-Item $o).Length
-
-# --- lote 5: provar que o arquivo baixado eh um ZIP de verdade ---
-# Se o Drive tiver devolvido uma pagina HTML no lugar do arquivo, o tamanho
-# vai vir pequeno e a assinatura nao eh 'PK'. Assinatura de ZIP eh PK\003\004.
 12|PS: $f=[IO.File]::OpenRead('F:\FNF_PS2_PENDRIVE.zip'); $b=New-Object byte[] 2; $null=$f.Read($b,0,2); $f.Close(); 'magic: '+[Text.Encoding]::ASCII.GetString($b)+'  tamanho: '+(Get-Item 'F:\FNF_PS2_PENDRIVE.zip').Length+'  (esperado 47488753)'
-
-# --- lote 6: extrair na RAIZ do F: ---
-# O ZIP tem FNFPS2/, FNF_PS2.ELF e LEIA-ME.txt na raiz, entao extrair em F:\
-# cria exatamente F:\FNFPS2 -- que eh o que o jogo exige. Sem isso ele dah
-# tela preta e nao escreve log.
 13|PS: Expand-Archive -Path 'F:\FNF_PS2_PENDRIVE.zip' -DestinationPath 'F:\' -Force; 'extraido para F:\'
-
-# --- lote 7: provar que consertou ---
 14|CMD: dir F:\FNFPS2
 15|CMD: dir F:\FNFPS2\assets
 16|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
+
+# --- lote 5: baixar de novo, agora com Invoke-WebRequest e diagnostico -----
+# Sem BITS. Sem o 'confirm=t' (que so serve para a pagina de antivirus do
+# Drive e pode atrapalhar). -PassThru devolve a resposta, entao eu leo o
+# status HTTP, o Content-Type e o Content-Length que o Drive mandou.
+# Se vier 'text/html', o Drive devolveu a pagina de confirmacao em vez do
+# arquivo -- e eu nao vou extrair HTML no pendrive de ninguem.
+17|PS: $ProgressPreference='SilentlyContinue'; Remove-Item 'F:\FNF_PS2_PENDRIVE.zip' -ErrorAction SilentlyContinue; $u='https://drive.google.com/uc?export=download&id=1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf'; $r=Invoke-WebRequest -Uri $u -UseBasicParsing -OutFile 'F:\FNF_PS2_PENDRIVE.zip' -PassThru; 'status: '+$r.StatusCode+'  tipo: '+$r.Headers['Content-Type']+'  header-len: '+$r.Headers['Content-Length']+'  disco: '+(Get-Item 'F:\FNF_PS2_PENDRIVE.zip').Length
+
+# --- lote 6: assinatura do arquivo -----------------------------------------
+# ZIP de verdade comeca com 'PK' (0x50 0x4B). HTML comeca com '<'.
+18|PS: $f=[IO.File]::OpenRead('F:\FNF_PS2_PENDRIVE.zip'); $b=New-Object byte[] 2; $null=$f.Read($b,0,2); $f.Close(); 'magic: '+[Text.Encoding]::ASCII.GetString($b)+'  tamanho: '+(Get-Item 'F:\FNF_PS2_PENDRIVE.zip').Length+'  (esperado 47488753)'
+
+# --- lote 7: extrair SO se o tamanho for exatamente o esperado -------------
+# 47488753. Se nao for, nao extraio -- evita despejar lixo no pendrive.
+19|PS: $t=(Get-Item 'F:\FNF_PS2_PENDRIVE.zip').Length; if ($t -eq 47488753) { Expand-Archive -Path 'F:\FNF_PS2_PENDRIVE.zip' -DestinationPath 'F:\' -Force; 'EXTRAIDO ('+$t+' bytes)' } else { 'NAO extrai: tamanho '+$t+' diferente de 47488753' }
+
+# --- lote 8: provar que consertou ------------------------------------------
+20|CMD: dir F:\FNFPS2
+21|CMD: dir F:\FNFPS2\assets
+22|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
