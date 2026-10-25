@@ -1,0 +1,42 @@
+@volta https://ntfy.sh/fnf-ps2-wsl-q3u9a9x36y
+@modo ultimo
+
+# ============================================================
+#  CANAL WSL -- comandos que rodam no Ubuntu, dentro do WSL
+# ============================================================
+#  Este canal eh SEPARADO do 'comandos.txt' de proposito:
+#  o cliente PowerShell le 'comandos.txt' e publica no topico
+#  fnf-ps2-wgte6e9toi7hjh; este cliente le 'comandos-wsl.txt' e
+#  publica em fnf-ps2-wsl-q3u9a9x36y. Assim um comando meu nunca roda nas duas
+#  maquinas ao mesmoempo, e eu sei de onde veio cada resposta.
+#
+#  Formato: uma linha "<id>|<comando>". Linhas com #, vazias e as
+#  diretivas @ sao ignoradas. Cada id roda uma vez so.
+#  Diretivas: @volta <url> e @modo <fila|ultimo>.
+#
+#  Prefixos aceitos no comando: SH: (bash), PS: e CMD: (tambem
+#  bash, por compatibilidade, para eu poder colar do outro canal).
+#
+#  Os comandos rodam na pasta do cliente. Para alcancar os arquivos
+#  do Windows: /mnt/c/Users/<voce>/...
+# ============================================================
+
+# --- lote 0: prova de vida -------------------------------------
+# Confirma que o cliente leu o canal, rodou no bash e publicou a
+# saida de volta. Se esta resposta chegar como MENSAGEM de texto
+# (e nao como "You received a file: attachment.txt"), a publicacao
+# esta certa -- que eh a unica parte deste cliente que ja quebrou
+# duas vezes.
+1|SH: echo 'FNF REMOTE WSL no ar'; echo '---' ; uname -a; echo '---'; whoami; echo '---'; pwd; echo '---'; python3 --version; echo '---'; git --version 2>/dev/null || echo 'git: AUSENTE'; echo '---'; which gcc make 2>/dev/null || echo 'gcc/make: AUSENTE'; echo '---'; ls -d /opt/ps2dev 2>/dev/null || echo 'ps2dev: AUSENTE'
+
+# --- lote 1: toolchain do PS2 ----------------------------------
+# O #1 foi RECUSADO pelo proprio cliente: a entrada "/dev/" da lista de area
+# protegida eh substring de "/dev/null", e "2>/dev/null" eh o idioma mais comum
+# do shell. Corrigido no cliente (commit 77c7810). Como gravar_ja_rodou() roda
+# ANTES da checagem, o #1 recusado ja consumiu o id -- por isso este eh o #2.
+#
+# Este comando baixa o toolchain ps2dev minimo (43 MB, 223 MB extraido) do Drive
+# e extrai em ~/ps2dev com --strip-components=1, para que PS2DEV=~/ps2dev.
+# Nao usa "rm -rf ~/..." de proposito: "rm-rf~" tambem esta na lista de area
+# protegida. Numa instalacao limpa nao ha nada para remover.
+2|SH: echo '=== 1/4 baixando toolchain (43 MB) ==='; cd ~; rm -f /tmp/ps2dev.tar.xz; curl -L --fail -sS -o /tmp/ps2dev.tar.xz 'https://drive.google.com/uc?id=1Va-8_k4GTxXpJaX4uMApV8OOpE9_QzJc&export=download'; echo "curl rc=$?"; ls -l /tmp/ps2dev.tar.xz; echo 'md5 esperado b1934310aa890177abec5e0da3bb2e47'; md5sum /tmp/ps2dev.tar.xz; echo '=== 2/4 extraindo em ~/ps2dev ==='; mkdir -p ~/ps2dev; tar -xJf /tmp/ps2dev.tar.xz -C ~/ps2dev --strip-components=1; echo "tar rc=$?"; echo '=== 3/4 o que extraiu ==='; ls ~/ps2dev; ls ~/ps2dev/ee/bin 2>/dev/null | head -15; echo '=== 4/4 ee-gcc roda? ==='; ~/ps2dev/ee/bin/ee-gcc --version 2>/dev/null | head -2; echo '--- fim ---'

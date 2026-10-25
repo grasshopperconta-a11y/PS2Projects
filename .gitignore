@@ -1,0 +1,10 @@
+
+# Downloads staged by the Drive connector while recovering assets. Never part of
+# the project: they are copies of files that live in Drive, and one of them is
+# 1.6 MB of runtime asset.
+google_drive/
+
+# ponte de comando remoto: tokens e estado NUNCA vao para o git.
+# O token_cliente eh a senha que abre o canal para o PC do usuario.
+fnfps2/tools/remote/estado/
+fnfps2/tools/remote/__pycache__/
