@@ -1,0 +1,30 @@
+@volta https://ntfy.sh/fnf-ps2-wsl-q3u9a9x36y
+@modo ultimo
+
+# ============================================================
+#  CANAL WSL -- comandos que rodam no Ubuntu, dentro do WSL
+# ============================================================
+#  Este canal eh SEPARADO do 'comandos.txt' de proposito:
+#  o cliente PowerShell le 'comandos.txt' e publica no topico
+#  fnf-ps2-wgte6e9toi7hjh; este cliente le 'comandos-wsl.txt' e
+#  publica em fnf-ps2-wsl-q3u9a9x36y. Assim um comando meu nunca roda nas duas
+#  maquinas ao mesmoempo, e eu sei de onde veio cada resposta.
+#
+#  Formato: uma linha "<id>|<comando>". Linhas com #, vazias e as
+#  diretivas @ sao ignoradas. Cada id roda uma vez so.
+#  Diretivas: @volta <url> e @modo <fila|ultimo>.
+#
+#  Prefixos aceitos no comando: SH: (bash), PS: e CMD: (tambem
+#  bash, por compatibilidade, para eu poder colar do outro canal).
+#
+#  Os comandos rodam na pasta do cliente. Para alcancar os arquivos
+#  do Windows: /mnt/c/Users/<voce>/...
+# ============================================================
+
+# --- lote 0: prova de vida -------------------------------------
+# Confirma que o cliente leu o canal, rodou no bash e publicou a
+# saida de volta. Se esta resposta chegar como MENSAGEM de texto
+# (e nao como "You received a file: attachment.txt"), a publicacao
+# esta certa -- que eh a unica parte deste cliente que ja quebrou
+# duas vezes.
+1|SH: echo 'FNF REMOTE WSL no ar'; echo '---' ; uname -a; echo '---'; whoami; echo '---'; pwd; echo '---'; python3 --version; echo '---'; git --version 2>/dev/null || echo 'git: AUSENTE'; echo '---'; which gcc make 2>/dev/null || echo 'gcc/make: AUSENTE'; echo '---'; ls -d /opt/ps2dev 2>/dev/null || echo 'ps2dev: AUSENTE'
