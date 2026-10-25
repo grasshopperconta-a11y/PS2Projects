@@ -156,6 +156,25 @@ static const char *const log_paths[] = {
 
    A funcao eh barata -- um punhado de open() que falham rapido -- e por isso
    pode ser chamada de novo mais tarde, sem custo para o jogo. */
+/* Cabecalho do arquivo. Vive aqui, e nao no init, porque a abertura pode ser
+   tardia: se ela sair no init e o pendrive montar depois, o arquivo comeca sem
+   dizer que build eh essa. */
+static void log_header(void)
+{
+    char line[512];
+    /* O checksum dos dados comeca aqui, na primeira linha escrita. */
+    output_checksum = 2166136261u;
+    snprintf(line, sizeof(line), "# FNF PS2 TELEMETRIA CONTINUA build=%.63s", build_name);
+    write_line(line);
+    snprintf(line, sizeof(line), "# elf=%.255s", launch_path);
+    write_line(line);
+    write_line("# physical=640x448 logical=1280x720 region=NTSC framebuffer=PSMCT32 buffering=double");
+    write_line("# scope=title,main_menu,story_menu,tutorial audio=audsrv pcm=s16le stereo=48000Hz");
+    write_line("# formato: uma linha por evento; tudo em texto, ordenado por emissao");
+    write_line("# colunas estado: quadro,ui,target,sel,nivel,diff,trans_frame,trans,transport,audio_on,audio_tocando,menu_susp,chart,tut_pronta,tut_audio,story_assets,menu_cache,title_anim,gf_up,bf_up,gf16_up,story_gf_up,story_bf_up,aspect169,vp360,music_clock,enviado,ring,underruns,fd_audio,fd_title,acertos,erros,combo,pontos,feedback,cursor_eventos");
+    write_line("# colunas quadro: quadro,begin,draw,vsync,draw_ticks,espera_ticks,total,fps,pressed,anim,anim_frame,asset_frame,quads,qwords,ui,trans,ouvido,fila_audio,ring,underruns");
+}
+
 static void log_try_open(int *path_index)
 {
     int i;
@@ -184,7 +203,23 @@ static void log_try_open(int *path_index)
                escritores divergiam. O custo eh o mesmo: mesmo open(), mesmo
                caminho, mesmo numero de escritas -- so a bandeira muda. */
             log_fd = open(log_paths[i], O_WRONLY | O_CREAT | O_TRUNC, 0666);
-            if (log_fd >= 0) { *path_index = i; break; }
+            if (log_fd >= 0) {
+                *path_index = i;
+                /* usb_ready so era ligado no telemetry_init(), e so quando a
+                   PRIMEIRA tentativa dava certo. Se o pendrive montava depois
+                   -- que eh exatamente o cenario que o comentario acima
+                   descreve --, a abertura tardia abria o descritor mas deixava
+                   usb_ready em 0, e todas as saidas comecam com
+                   if(!usb_ready) return. O arquivo era truncado para 0 bytes
+                   pelo O_TRUNC e nunca mais recebia um byte: foi assim que o
+                   FNF_COLHEITA.txt veio vazio tres vezes enquanto o BOOT.txt,
+                   que abre o descritor proprio, funcionava. A bandeira agora
+                   eh ligada aqui, no instante em que o descritor abre, e vale
+                   igual na primeira e na quadragesima tentativa. */
+                usb_ready = 1;
+                log_header();
+                break;
+            }
             DelayThread(100000);
         }
     }
@@ -242,23 +277,12 @@ int telemetry_init(const char *build_id, const char *elf_path)
         return init_result;
     }
 
-    usb_ready = 1;
+    /* O cabecalho e a bandeira usb_ready sao responsabilidade do
+       log_try_open(), que eh quem sabe se a abertura aconteceu agora ou no
+       quadro 40. Aqui fica so o resultado da abertura, que depende de
+       variaveis locais deste init. */
     {
         char line[512];
-        /* O cabecalho sai no init, nao no fim: se o port travar no meio, o
-           arquivo jah comeca dizendo que build eh este e em que modo. */
-        output_checksum = 2166136261u;
-        snprintf(line, sizeof(line), "# FNF PS2 TELEMETRIA CONTINUA build=%.63s", build_name);
-        write_line(line);
-        snprintf(line, sizeof(line), "# elf=%.255s", launch_path);
-        write_line(line);
-        write_line("# physical=640x448 logical=1280x720 region=NTSC framebuffer=PSMCT32 buffering=double");
-        write_line("# scope=title,main_menu,story_menu,tutorial audio=audsrv pcm=s16le stereo=48000Hz");
-        write_line("# formato: uma linha por evento; tudo em texto, ordenado por emissao");
-        write_line("# colunas estado: quadro,ui,target,sel,nivel,diff,trans_frame,trans,transport,audio_on,audio_tocando,menu_susp,chart,tut_pronta,tut_audio,story_assets,menu_cache,title_anim,gf_up,bf_up,gf16_up,story_gf_up,story_bf_up,aspect169,vp360,music_clock,enviado,ring,underruns,fd_audio,fd_title,acertos,erros,combo,pontos,feedback,cursor_eventos");
-        write_line("# colunas quadro: quadro,begin,draw,vsync,draw_ticks,espera_ticks,total,fps,pressed,anim,anim_frame,asset_frame,quads,qwords,ui,trans,ouvido,fila_audio,ring,underruns");
-        /* Resultado da abertura: diz se o lancador jah tinha montado o mass:,
-           quantos modulos falharam, e em qual caminho o arquivo foi parar. */
         snprintf(line, sizeof(line), "# init ok caminho=%d modulos_carregados=%d falhas_modulo=%d aberto_direto=%d",
                  path_index, modules_loaded, module_failures, modules_loaded ? 0 : 1);
         write_line(line);

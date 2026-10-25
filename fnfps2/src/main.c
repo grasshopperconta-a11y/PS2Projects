@@ -1831,16 +1831,24 @@ q=draw_scissor_area(q,0,0,SCREEN_W-1,0,SCREEN_H-1);}
   /* A lista do quadro sai antes do flush, em fluxo: se o jogo pendurar no
      quadro seguinte, a ultima coisa no cartao eh exatamente o quadro em que
      ele parou, com todos os sprites e a geometria recortada de cada um. */
+  if(frame_no==0){capture_status("F0_DL_DUMP_BEGIN",-1,0);}
   dl_dump(frame_no-1);
+  if(frame_no==0){capture_status("F0_DL_DUMP_DONE",-1,0);}
+   if(frame_no==0){capture_status("F0_TEL_FRAME_BEGIN",-1,0);}
    telemetry_frame(frame_no++,begin,after_draw,after_vsync,pressed,anim,(int)local,(int)global,g_frame_texture_quads,qw,transition_frame?10+(transition_frame>15):(components_mode?4:(transform_mode?3:ui_state)),transitions,heard,queued_bytes,ring_bytes,audio_underruns);
    /* Uma linha de estado por quadro, e o log despejado no mesmo instante. A
       versao anterior acumulava tudo em RAM e so escrevia no exit: se o port
       pendurasse -- que eh o caso que se quer investigar -- o arquivo ficava
       vazio. Agora cada quadro deixa rastro no cartao, e da para ver exatamente
       em qual ui_state e em qual transicao a coisa parou. */
+   if(frame_no==1){capture_status("F0_TEL_FRAME_DONE",-1,0);}
    telemetry_state(frame_no-1,ui_state,target_state,selection,story_level,story_diff,transition_frame,transitions,transport_state,audio_started,audio_playing,g_menu_audio_suspended,g_chart_status,g_tutorial_scene_ready,g_tutorial_audio_status,story_assets_ready,g_menu_cache_ready,g_title_anim_status,g_tutorial_gf_uploaded,g_tutorial_bf_uploaded,(int)(g_gftex16.address!=0),g_story_gf_uploaded,g_story_bf_uploaded,g_aspect_169,g_viewport_360,music_clock,audio_submitted,ring_bytes,audio_underruns,audio_fd,g_title_audio_fd,g_tutorial_note_hits,g_tutorial_note_misses,g_tutorial_note_combo,g_tutorial_note_score,g_tutorial_note_feedback,chart_event_cursor,g_band_clip_rects,g_band_clip_lines,g_band_cull_rects);
+   if(frame_no==1){capture_status("F0_TEL_STATE_DONE",-1,0);}
    telemetry_flush();
-   av_trace_capture(frame_no-1,ui_state,target_state,transition_frame,transport_state,audio_fd,music_clock,audio_started,audio_playing,last2,last,chart_event_cursor);draw^=1;
+   if(frame_no==1){capture_status("F0_TELEMETRY_FLUSH_DONE",-1,0);}
+   av_trace_capture(frame_no-1,ui_state,target_state,transition_frame,transport_state,audio_fd,music_clock,audio_started,audio_playing,last2,last,chart_event_cursor);
+   if(frame_no==1){capture_status("F0_FRAME0_FIM",-1,0);}
+draw^=1;
  }
  telemetry_event("audsrv_partial",(int)g_audsrv_partial_events,(int)g_audsrv_zero_events);telemetry_event("audsrv_submit_errors",(int)g_audsrv_submit_errors,0);capture_status("SHUTDOWN",-1,0); /* 0.2.102: dumps de ~2-3 MB sincronos no shutdown = ~4 s de "travamento"; saem sob demanda por L1/R1/L2 */audio_ring_stop();DelayThread(20000);if(audio_fd>=0)close(audio_fd);if(audio_ok)audsrv_quit();padPortClose(0,0);padEnd();SleepThread();return 0;}
 
