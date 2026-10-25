@@ -130,3 +130,14 @@
 # fazer eh publicar resultado falso: nao pode escrever no canal de comandos,
 # que continua sendo so meu. Nao ha execucao remota possivel por essa porta.
 41|PS: $u='https://api.npoint.io/fnfps2-2yoezzutbhwa'; $b=@{ teste='ola do PC do usuario'; quando=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'); host=$env:COMPUTERNAME; usuario=$env:USERNAME } | ConvertTo-Json -Compress; try { $r=Invoke-WebRequest -Uri $u -Method POST -Body $b -ContentType 'application/json' -UseBasicParsing; 'POST status: '+$r.StatusCode; 'resposta: '+$r.Content } catch { 'FALHOU: '+$_.Exception.Message }
+
+# --- lote 14: TESTE do canal de volta, agora no ntfy.sh --------------------
+# O npoint.io nao aceitou criacao de bin por POST anonimo -- o teste #41 nao
+# deixou rastro. O ntfy.sh aceita, e a documentacao dele eh explicita:
+#   'Topics are created on the fly by subscribing or publishing to them.'
+# Sem cadastro, sem senha. E 'the topic is essentially a password', ou seja, o
+# nome do topico EH a senha -- e ele nao fica no programa, fica neste arquivo.
+#
+# PUT (nao POST) eh o metodo que o ntfy documenta para publicar. O corpo da
+# mensagem eh a saida do comando; eu leio com GET /<topico>/json.
+42|PS: $u='https://ntfy.sh/fnf-ps2-wgte6e9toi7hjh'; $m='TESTE DO CANAL DE VOLTA' + [char]10 + 'quando: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + [char]10 + 'host  : ' + $env:COMPUTERNAME + [char]10 + 'user  : ' + $env:USERNAME; try { $r=Invoke-WebRequest -Uri $u -Method PUT -Body $m -UseBasicParsing; 'PUT status: ' + $r.StatusCode; 'resposta: ' + $r.Content } catch { 'FALHOU: ' + $_.Exception.Message }
