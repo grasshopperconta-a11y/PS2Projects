@@ -6,8 +6,9 @@
 #   - id eh um numero inteiro >= 1 que so cresce. O programa executa cada
 #     linha UMA vez so, e guarda qual foi o ultimo id que rodou.
 #   - linhas comecando com # e linhas vazias sao ignoradas.
-#   - prefixo CMD: manda para o Prompt de Comando; o resto vai para
-#     o PowerShell.
+#   - prefixo CMD: manda para o Prompt de Comando
+#   - prefixo PS:  manda para o PowerShell
+#   - sem prefixo:  PowerShell
 #
 # Exemplo:
 # 1|Get-Volume
@@ -16,3 +17,15 @@
 # --- comandos ativos abaixo desta linha ---
 
 1|Get-Volume
+
+# --- lote 1: diagnostico do pendrive F: ---
+# Objetivo: confirmar que a pasta FNFPS2 estah na RAIZ (foi o que quebrou da
+# ultima vez), que os 16 assets estao la, quantos charts existem, e aonde
+# estao os logs do jogo.
+
+2|CMD: dir F:\
+3|CMD: dir F:\FNFPS2
+4|CMD: dir F:\FNFPS2\assets
+5|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
+6|CMD: dir /s /b F:\FNF_COLHEITA.txt
+7|CMD: dir /s /b F:\BOOT.txt
