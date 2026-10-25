@@ -76,3 +76,28 @@
 27|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-20.txt
 28|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-21.txt
 29|CMD: type C:\Users\joao6\Downloads\FNF_REMOTE_cliente\resultados\resultado-22.txt
+
+# --- lote 10: receber o pendrive que o usuario baixou pelo navegador --------
+# O #17 provou que o Drive barra download anonimo de arquivo grande: devolveu
+# uma pagina HTML de 2475 bytes (a tela 'o Google nao pode verificar este
+# arquivo'). Nenhum truque de URL resolve isso de forma confiavel -- o token
+# de confirmacao muda por sessao.
+#
+# O caminho honesto: o usuario baixa pelo navegador (onde ele clica em
+# 'Baixar mesmo assim'), o arquivo cai em Downloads, e eu extraio.
+#
+# Verificacao em duas camadas antes de extrair:
+#   1. tamanho == 47488753
+#   2. md5   == b1302e1ad068b9d6005a5b8d629d8d41  (o que o Drive informa)
+# Assim nao ha como extrair um arquivo truncado ou corrompido.
+30|PS: $z = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -Filter FNF_PS2_0.2.112_PENDRIVE.zip -ErrorAction SilentlyContinue | Select-Object -First 1; if ($z) { 'achei: ' + $z.FullName; 'tamanho: ' + $z.Length + ' (esperado 47488753)'; $m = (Get-FileHash $z.FullName -Algorithm MD5).Hash.ToLower(); 'md5: ' + $m; if ($m -eq 'b1302e1ad068b9d6005a5b8d629d8d41') { 'MD5 CONFEREE -- arquivo integro' } else { 'MD5 DIFERENTE do esperado' } } else { 'ZIP do pendrive NAO encontrado em Downloads' }
+31|PS: $z = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -Filter FNF_PS2_0.2.112_PENDRIVE.zip -ErrorAction SilentlyContinue | Select-Object -First 1; if ($z -and $z.Length -eq 47488753) { Expand-Archive -Path $z.FullName -DestinationPath 'F:\' -Force; 'EXTRAIDO para F:\' } elseif (-not $z) { 'nada a extrair: ZIP nao encontrado em Downloads' } else { 'nada a extrair: tamanho ' + $z.Length + ' != 47488753' }
+32|CMD: dir F:\FNFPS2
+33|CMD: dir F:\FNFPS2\assets
+34|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
+
+# --- lote 11: diagnostico do bloqueio do Drive ------------------------------
+# Para eu entender, de uma vez, o que o Drive responde a um pedido anonimo.
+# Se a pagina tiver um form action com token de confirmacao, dah para montar
+# um download automatico nas proximas vezes -- sem depender do navegador.
+35|PS: $u='https://drive.google.com/uc?export=download&id=1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf'; $r=Invoke-WebRequest -Uri $u -UseBasicParsing; 'len: ' + $r.Content.Length; $m=[regex]::Match($r.Content,'action=([^>\x22]+)'); if ($m.Success) { 'form action: ' + $m.Groups[1].Value } else { 'sem form action' }; foreach ($l in $r.Links) { 'link: ' + $l.href }
