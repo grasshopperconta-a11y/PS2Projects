@@ -101,3 +101,17 @@
 # Se a pagina tiver um form action com token de confirmacao, dah para montar
 # um download automatico nas proximas vezes -- sem depender do navegador.
 35|PS: $u='https://drive.google.com/uc?export=download&id=1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf'; $r=Invoke-WebRequest -Uri $u -UseBasicParsing; 'len: ' + $r.Content.Length; $m=[regex]::Match($r.Content,'action=([^>\x22]+)'); if ($m.Success) { 'form action: ' + $m.Groups[1].Value } else { 'sem form action' }; foreach ($l in $r.Links) { 'link: ' + $l.href }
+
+# --- lote 12: achar a pasta que o usuario EXTRAIU ---------------------------
+# O #30 nao achou nada porque eu procurei o arquivo .zip em Downloads, mas o
+# usuario baixou E extraiu. O ZIP nao existe mais -- existe a pasta extraida,
+# em algum lugar de Downloads. Procuro a pasta, nao o arquivo.
+#
+# Autodescoberta de proposito: se o nome da pasta ou o caminho forem
+# diferentes do que eu suponho, o comando ainda assim acha e copia. Nada de
+# exigir que o usuario saiba o caminho exato.
+36|CMD: dir /b C:\Users\joao6\Downloads
+37|PS: $d = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -Directory -Filter FNFPS2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($d) { 'achou: ' + $d.FullName; 'arquivos dentro: ' + (Get-ChildItem $d.FullName -Recurse -File -ErrorAction SilentlyContinue).Count; Copy-Item -Path $d.FullName -Destination 'F:\FNFPS2' -Recurse -Force; 'COPIADO para F:\FNFPS2' } else { 'NAO achou pasta FNFPS2 em Downloads' }
+38|PS: $e = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -File -Filter FNF_PS2.ELF -ErrorAction SilentlyContinue | Select-Object -First 1; if ($e) { 'achou: ' + $e.FullName + '  tamanho: ' + $e.Length; Copy-Item -Path $e.FullName -Destination 'F:\FNF_PS2_0.2.112.ELF' -Force; 'ELF copiado' } else { 'NAO achou FNF_PS2.ELF em Downloads -- o que jah estah em F:\ continua valendo' }
+39|CMD: dir F:\FNFPS2\assets
+40|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
