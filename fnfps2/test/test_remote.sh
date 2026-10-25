@@ -209,8 +209,40 @@ else
     ok "nenhuma referencia a servidor, porta ou senha"
 fi
 
-echo "== sintaxe =="
+echo "== sintaxe do PowerShell =="
+# O cliente foi entregue UMA VEZ com erro de sintaxe, e so descobrimos quando
+# o usuario rodou: uma string quebrada em duas linhas com '+', que o parser
+# do PowerShell trata como fim de instrucao (MissingEndParenthesis).
+#
+# Nao tenho PowerShell aqui, entao checa_ps1.py faz uma verificacao
+# ESTRUTURAL. O ponto do teste eh duplo: tem de passar no arquivo bom E
+# falhar numa copia com o bug original.
 python3 -m py_compile tools/remote/gerar_cliente.py && ok "gerar_cliente.py compila"
+
+if python3 tools/remote/checa_ps1.py tools/remote/fnf-remote-client.ps1 >"$TMP/ps1.log" 2>&1; then
+    ok "cliente .ps1 passa na verificacao estrutural"
+else
+    falha "cliente .ps1 tem problema de sintaxe" "$(cat "$TMP/ps1.log")"
+fi
+
+# e a verificacao tem de pegar o bug que escapou
+cat > "$TMP/quebrado.ps1" <<'PS'
+$atingiu = 'system32'
+if ($atingiu) {
+    $txt = ("RECUSADO: area protegida "
+            + "(System32). Nada foi executado." -f $atingiu)
+    continue
+}
+PS
+if python3 tools/remote/checa_ps1.py "$TMP/quebrado.ps1" >"$TMP/ps1b.log" 2>&1; then
+    falha "a verificacao NAO pegou a quebra de string -- o teste eh inutil" "$(cat "$TMP/ps1b.log")"
+else
+    if grep -q "MissingEndParenthesis" "$TMP/ps1b.log"; then
+        ok "a verificacao pega a quebra de string que escapou"
+    else
+        falha "pegou algo, mas nao a quebra de string" "$(cat "$TMP/ps1b.log")"
+    fi
+fi
 
 echo "== o canal committado eh bem formado =="
 # ids tem de ser numeros e nao repetidos, senao o cliente pula ou repete

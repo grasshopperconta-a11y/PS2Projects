@@ -173,8 +173,9 @@ while ($true) {
         $atingiu = Test-Protegido $cmd
         if ($atingiu) {
             Write-Host '           RECUSADO: mexe em area protegida' -ForegroundColor Red
-            $txt = ("RECUSADO PELO CLIENTE: o comando menciona '{0}', que eh area protegida "
-                    + "(System32 / Windows). Nada foi executado no seu PC." -f $atingiu)
+            #string numa linha so: quebrar com '+' faz o parser do PowerShell
+            #tratar a quebra como fim de instrucao (erro MissingEndParenthesis)
+            $txt = "RECUSADO PELO CLIENTE: o comando menciona '$atingiu', que eh area protegida (System32 / Windows). Nada foi executado no seu PC."
             Set-Content -LiteralPath (Join-Path $PastaResultado ("resultado-{0}.txt" -f $id)) -Value $txt -Encoding UTF8
             # marca como rodado mesmo recusado, senao ele tentaria de novo para sempre
             $jaRodou = $id

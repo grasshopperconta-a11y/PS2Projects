@@ -31,8 +31,9 @@ lugar.
   `1-b_MGBqR0ZNntX6nYIRN90J20ufMQEIf` — descompacte **direto na raiz** do
   pendrive. Traz `FNF_PS2.ELF` + `FNFPS2/assets/` com os 16 assets e os 81
   charts nos 4 layouts + `LEIA-ME.txt`.
-- **Cliente do canal remoto (ZIP, 7.049 B, 3 arquivos):**
-  `1R8YMDecPuhro9QqJGksChGPv0vfeyIQH` — ver §13. Não precisa de senha nem de
+- **Cliente do canal remoto (ZIP, 7.112 B, 3 arquivos):**
+  `1wCHcdJ6ub9pUn0CeNOtEsEsWTGoKNDmN` — ver §13. (A versão `1R8YMDec...` e a
+  `1jfFk4...` mais antiga continham um erro de sintaxe PowerShell; não use.) Não precisa de senha nem de
   instalação. (A versão anterior, `1jfFk4SJt6Uffdaytd2jRala8xATNiTRu`, usava
   um servidor exposto em URL pública que o proxy do e2b não serve — está
   superada, não use.)
@@ -556,6 +557,45 @@ passava direto. Só foi pego porque o teste cobre esse caso.
 **E o bug de id que o teste pegou:** a comparação é `id <= já rodou`, e o
 estado inicial é 0. Um comando com id `0` **nunca executaria** — eu ia achar
 que o comando tinha sumido. Agora o parser rejeita `id < 1` explicitamente.
+
+### Entreguei um erro de sintaxe PowerShell, e só descobrimos na mão do usuário
+
+O cliente foi para o Drive com isto (linhas 176-177):
+
+```powershell
+$txt = ("RECUSADO PELO CLIENTE: o comando menciona '{0}', que eh area protegida "
+        + "(System32 / Windows). Nada foi executado no seu PC." -f $atingiu)
+```
+
+O parser do PowerShell **não aceita** a quebra de linha depois de uma string
+completa dentro de parênteses: trata a quebra como fim de instrução e reclama
+que falta o `)` — `MissingEndParenthesisInExpression`. O programa não rodava
+**nunca**, e o `.cmd` reiniciava a cada 3 s, então o usuário viu a mesma
+cachoeira de erro repetindo sem parar.
+
+A correção é trivial (string numa linha só). O problema é que **eu não tinha
+como detectar**: não há PowerShell neste sandbox, então eu nunca tinha
+executado o arquivo. Tinha verificado tudo em Python — a trava, o parser, o
+gerador — e o próprio PowerShell, nunca.
+
+**O que fiz a respeito:** `tools/remote/checa_ps1.py`, um verificador
+**estrutural** do `.ps1`. Ele não substitui o PowerShell, mas pega exatamente
+essa classe de erro:
+
+- string aberta e não fechada na linha;
+- `()`, `{}`, `[]` dessincronizados (contando comentários de bloco `<# ... #>`
+  e here-strings `@"..."@`, que atravessam linhas e enganariam um contador
+  burro);
+- **linha terminando em string completa seguida de linha começando com
+  operador binário** — o padrão exato que quebrou.
+
+E o teste é duplo de propósito: tem de **passar** no arquivo bom **e falhar**
+numa cópia com o bug original. Um verificador que nunca foi visto falhar no
+bug real não está verificando nada.
+
+**A liada geral:** eu tinha um harness inteiro para o projeto em C e nenhum
+para o programa que ia rodar na máquina do usuário. A cobertura de teste
+precisa cobrir *tudo* que eu entrego, não só o que é conveniente testar daqui.
 
 ### O bug do `.cmd` que quebraria todo uso
 
