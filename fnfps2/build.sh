@@ -26,6 +26,25 @@
 # m4, texinfo, autoconf, automake, libtool and cmake, none of which can be
 # installed. What this script does is find the toolchain you already have, use
 # it, and tell you clearly when it is missing.
+#
+# --- ATUALIZADO 2026-10-25: "no network access" era meia verdade ---
+# O sandbox nao alcanca drive.google.com por HTTP. Mas o CONECTOR do Google
+# Drive roda fora dessa restricao e escreve o arquivo no workspace:
+#
+#     google_drive__download_file {"file_id": "1Va-8_k4GTxXpJaX4uMApV8OOpE9_QzJc"}
+#
+# Isso deixa google_drive/PS2DEV_EE_MIN_FNF.tar.xz no disco -- que eh exatamente
+# onde o tools/with_toolchain.sh ja o procurava. A infraestrutura foi desenhada
+# para isto; so faltava o arquivo existir. Dava para compilar aqui o tempo todo,
+# e eu conclui o contrario por tres rodadas sem testar.
+#
+# Portanto, para compilar DE VERDADE (build completa + validacao, sincrona):
+#
+#     sh tools/with_toolchain.sh sh -c 'rm -f src/*.o src/engine/*.o *.elf *.map; ./build.sh'
+#
+# NAO use ./build.sh --clean: o toolchain eh extraido dentro de build/toolchain e
+# o --clean apaga esse diretorio. A build seguinte morre com "No PS2 toolchain
+# found", que eh exatamente o erro que este comentario agora explica.
 
 set -u
 

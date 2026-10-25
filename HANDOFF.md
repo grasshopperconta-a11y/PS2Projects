@@ -80,6 +80,45 @@ sh tools/build_pendrive.sh      # gera build/pendrive com LEIA-ME.txt na raiz
 **O toolchain e os 16 assets de runtime estão no Google Drive** — ids em
 `CONHECIMENTO.md` §2. Baixe antes de compilar; sem eles nada funciona.
 
+### ⚠️ Dá para compilar AQUI, sim — descoberta de 2026-10-25
+
+O comentário do `build.sh` dizia "this sandbox cannot build one for you". **Isso
+estava errado, e me custeu três rodadas.** O sandbox não alcança
+`drive.google.com` por HTTP — mas o **conector do Google Drive** roda fora dessa
+restrição e escreve o arquivo no workspace:
+
+```
+google_drive__download_file {"file_id": "1Va-8_k4GTxXpJaX4uMApV8OOpE9_QzJc"}
+```
+
+Isso deixa `google_drive/PS2DEV_EE_MIN_FNF.tar.xz` (43.841.008 B, md5
+`b1934310aa890177abec5e0da3bb2e47`) no disco, que é exatamente onde o
+`tools/with_toolchain.sh` já o procurava. A infraestrutura foi desenhada para
+isto; só faltava o arquivo existir.
+
+Build completa e validada, **síncrona, na mesma mensagem**:
+
+```
+sh tools/with_toolchain.sh sh -c 'rm -f src/*.o src/engine/*.o *.elf *.map; ./build.sh'
+```
+
+Tempos medidos: 17 s para a build completa (12 objetos + link + validação), 3 s
+incremental. ELF de 5.272.844 B contra uma baseline de 5.089.600.
+
+**Duas armadilhas:**
+
+1. **Nunca use `./build.sh --clean`.** O toolchain é extraído dentro de
+   `build/toolchain`, e o `--clean` apaga esse diretório — a build seguinte
+   morre com "No PS2 toolchain found". Limpe só os objetos, como no comando
+   acima.
+2. Confirme que a mudança entrou no binário antes de entregar:
+   `strings -a fnf_ps2_m84.elf | grep F0_TEL_FRAME_BEGIN`. Um ELF velho no
+   diretório não prova nada.
+
+O canal ntfy (`fnf-ps2-wsl-*`) continua existindo, mas **não entrega o que se
+promete**: é assíncrono por natureza, e eu não consigo lê-lo do sandbox. Para
+compilar e testar, use o conector do Drive.
+
 ### Ordem obrigatória antes de entregar uma build
 
 1. compilar **sem warnings**;
