@@ -121,8 +121,8 @@
 # diferentes do que eu suponho, o comando ainda assim acha e copia. Nada de
 # exigir que o usuario saiba o caminho exato.
 36|CMD: dir /b C:\Users\joao6\Downloads
-37|PS: $d = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -Directory -Filter FNFPS2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($d) { 'achou: ' + $d.FullName; 'arquivos dentro: ' + (Get-ChildItem $d.FullName -Recurse -File -ErrorAction SilentlyContinue).Count; Copy-Item -Path $d.FullName -Destination 'F:\FNFPS2' -Recurse -Force; 'COPIADO para F:\FNFPS2' } else { 'NAO achou pasta FNFPS2 em Downloads' }
-38|PS: $e = Get-ChildItem $env:USERPROFILE\Downloads -Recurse -File -Filter FNF_PS2.ELF -ErrorAction SilentlyContinue | Select-Object -First 1; if ($e) { 'achou: ' + $e.FullName + '  tamanho: ' + $e.Length; Copy-Item -Path $e.FullName -Destination 'F:\FNF_PS2_0.2.112.ELF' -Force; 'ELF copiado' } else { 'NAO achou FNF_PS2.ELF em Downloads -- o que jah estah em F:\ continua valendo' }
+37|PS: $d = Get-ChildItem $env:USERPROFILE\Downloads -Directory -Depth 4 -Filter FNFPS2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($d) { 'achou: ' + $d.FullName; 'arquivos: ' + (Get-ChildItem $d.FullName -Recurse -File -ErrorAction SilentlyContinue).Count; Copy-Item -Path $d.FullName -Destination 'F:\FNFPS2' -Recurse -Force; 'COPIADO para F:\FNFPS2' } else { 'NAO achou FNFPS2 em Downloads' }
+38|PS: $e = Get-ChildItem $env:USERPROFILE\Downloads -File -Depth 4 -Filter FNF_PS2.ELF -ErrorAction SilentlyContinue | Select-Object -First 1; if ($e) { 'achou: ' + $e.FullName + '  ' + $e.Length; Copy-Item -Path $e.FullName -Destination 'F:\FNF_PS2_0.2.112.ELF' -Force; 'ELF copiado' } else { 'ELF nao achado em Downloads -- o que jah estah em F:\ continua valendo' }
 39|CMD: dir F:\FNFPS2\assets
 40|PS: (Get-ChildItem F:\FNFPS2\assets -Recurse -Filter *.chart -ErrorAction SilentlyContinue).Count
 
@@ -151,3 +151,10 @@
 # PUT (nao POST) eh o metodo que o ntfy documenta para publicar. O corpo da
 # mensagem eh a saida do comando; eu leio com GET /<topico>/json.
 42|PS: $u='https://ntfy.sh/fnf-ps2-wgte6e9toi7hjh'; $m='TESTE DO CANAL DE VOLTA' + [char]10 + 'quando: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + [char]10 + 'host  : ' + $env:COMPUTERNAME + [char]10 + 'user  : ' + $env:USERNAME; try { $r=Invoke-WebRequest -Uri $u -Method PUT -Body $m -UseBasicParsing; 'PUT status: ' + $r.StatusCode; 'resposta: ' + $r.Content } catch { 'FALHOU: ' + $_.Exception.Message }
+
+# --- lote 15: prova da volta automatica ------------------------------------
+# Comandos simples e rapidos, so para eu ver a volta chegar. Quando o cliente
+# novo estiver rodando, eu mando isto e leio o resultado aqui, no mesmo
+# raciocinio -- sem voce copiar nada.
+43|PS: 'VOLTA AUTOMATICA FUNCIONANDO' + [char]10 + 'host: ' + $env:COMPUTERNAME + [char]10 + 'usuario: ' + $env:USERNAME + [char]10 + 'hora: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+44|CMD: ver
