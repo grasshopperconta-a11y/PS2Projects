@@ -66,6 +66,16 @@ $TempoLimitePadrao = 180
 $Volta = ''
 $TamanhoPedaco = 3500   # ntfy rejeita corpo grande; fatio em pedacos deste tamanho
 
+# Modo de execucao:
+#   'fila'   = roda todos os comandos novos, um atras do outro (o padrao antigo)
+#   'ultimo' = roda SO o comando mais novo e abandona o resto da fila
+#
+# 'ultimo' existe porque eu as vezes publico um lote de comandos de uma vez, e
+# o programa despejava todos em cascata. Em 'ultimo' ele espera: quando eu
+# mando o proximo, ele roda o proximo. Vem do canal ('@modo ultimo'), entao eu
+# troco quando quiser sem voce reinstalar nada.
+$Modo = 'fila'
+
 New-Item -ItemType Directory -Force -Path $PastaResultado | Out-Null
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
@@ -154,7 +164,17 @@ function Publicar-Volta([string]$url, [string]$texto) {
             $corpo = "[parte $($p + 1)/$($pedacos.Count)]`n" + $corpo
         }
         try {
-            Invoke-WebRequest -Uri $url -Method PUT -Body $corpo -UseBasicParsing -TimeoutSec 30 | Out-Null
+            # UTF-8 explicito, e ContentType declarado. Sem isso o
+            # Invoke-WebRequest manda o corpo como ISO-8859-1 (o padrao do
+            # Windows) e o ntfy nao reconhece como texto: guarda como ANEXO
+            # e a mensagem vira so "You received a file: attachment.txt".
+            # Foi exatamente o que aconteceu com todo resultado que tinha
+            # acento -- "Pasta", "Nao eh possivel". Resultado em ingles puro
+            # passava; tudo com acento virava anexo. Medido, nao suposto.
+            $bytes = [Text.Encoding]::UTF8.GetBytes($corpo)
+            Invoke-WebRequest -Uri $url -Method PUT -Body $bytes `
+                -ContentType 'text/plain; charset=utf-8' `
+                -UseBasicParsing -TimeoutSec 30 | Out-Null
         } catch {
             # Silencio de proposito: um erro de publicacao nao pode poluir o
             # console nem parar o loop. Se precisar saber, o arquivo de
@@ -214,6 +234,18 @@ while ($true) {
             continue
         }
 
+        # ---- diretiva '@modo <fila|ultimo>': como tratar a fila de comandos
+        if ($l.StartsWith('@modo ')) {
+            $nm = $l.Substring(6).Trim().ToLower()
+            if ($nm -eq 'ultimo' -or $nm -eq 'fila') {
+                if ($nm -ne $Modo) {
+                    $Modo = $nm
+                    Write-Host ("[{0:HH:mm:ss}] modo de execucao: {1}" -f (Get-Date), $Modo) -ForegroundColor Cyan
+                }
+            }
+            continue
+        }
+
         $i = $l.IndexOf('|')
         if ($i -le 0) { continue }
         $idTxt = $l.Substring(0, $i).Trim()
@@ -232,6 +264,23 @@ while ($true) {
     if ($novos.Count -eq 0) {
         Start-Sleep -Seconds $Intervalo
         continue
+    }
+
+    # ---- modo 'ultimo': de proposito, SO o comando mais novo roda.
+    #
+    # Os mais antigos que ficaram na fila sao marcados como rodados e
+    # abandonados. Assim, se eu publicar um lote de comandos de uma vez, o
+    # programa nao despeja todos em cascata: ele executa o mais novo, publica
+    # a saida, e espera eu mandar o proximo. Sem loop, sem surpresa.
+    if ($Modo -eq 'ultimo' -and $novos.Count -gt 1) {
+        $maior = ($novos | Measure-Object -Property id -Maximum).Maximum
+        foreach ($job in $novos) {
+            if ($job.id -lt $maior) {
+                Set-JaRodou $job.id
+                Write-Host ("[{0:HH:mm:ss}]#{1} deixado para tras: existe um mais novo (#{2})" -f (Get-Date), $job.id, $maior) -ForegroundColor DarkGray
+            }
+        }
+        $novos = @($novos | Where-Object { $_.id -eq $maior })
     }
 
     $novos = $novos | Sort-Object id

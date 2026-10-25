@@ -383,6 +383,35 @@ if any(("ntfy" in u or "npoint" in u) for u in urls):
 else:
     print("  PASSA  endereco do canal de volta nao estah no cliente (vem do canal)")
 
+# (j) o corpo tem de ir como UTF-8 com ContentType declarado. Sem isso o
+#     Invoke-WebRequest manda ISO-8859-1 e o ntfy guarda como ANEXO: a mensagem
+#     vira so "You received a file: attachment.txt". Medido em producao -- todo
+#     resultado com acento ("Pasta", "Nao eh possivel") virou anexo.
+if "GetBytes($corpo)" not in src:
+    erros.append("corpo nao eh convertido para bytes UTF-8: resultado com "
+                 "acento vira anexo no ntfy e eu nao leio")
+else:
+    print("  PASSA  corpo convertido para UTF-8 antes de publicar")
+if "text/plain; charset=utf-8" not in src:
+    erros.append("ContentType nao declarado: sem isso o ntfy pode tratar o "
+                 "corpo como arquivo")
+else:
+    print("  PASSA  ContentType text/plain; charset=utf-8 declarado")
+
+# (k) modo 'ultimo': so o comando mais novo roda, o resto da fila eh
+#     abandonado. Sem isso, um lote publicado de uma vez despeja tudo em
+#     cascata e o programa fica em loop.
+if "StartsWith('@modo ')" not in src:
+    erros.append("o cliente nao le a diretiva '@modo': nao dah para eu "
+                 "escolher entre fila e ultimo sem reinstalar")
+else:
+    print("  PASSA  diretiva @modo lida do canal")
+if "Measure-Object -Property id -Maximum" not in src:
+    erros.append("modo 'ultimo' nao seleciona o maior id: a fila continuaria "
+                 "despejando tudo em cascata")
+else:
+    print("  PASSA  modo 'ultimo' seleciona so o comando mais novo")
+
 if erros:
     for e in erros:
         print("    " + e)

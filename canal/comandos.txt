@@ -36,6 +36,12 @@
 # escrevo -- nao dah para fazer nada rodar no seu PC por essa porta.
 @volta https://ntfy.sh/fnf-ps2-wgte6e9toi7hjh
 
+# Modo de execucao. 'ultimo' = o programa roda SO o comando mais novo e
+# abandona o resto da fila. Assim ele nao despeja uma cascata de comandos
+# velhos: eu mando um, ele executa, publica a saida, e espera o proximo.
+# Sem loop.
+@modo ultimo
+
 # --- comandos ativos abaixo desta linha ---
 
 1|Get-Volume
