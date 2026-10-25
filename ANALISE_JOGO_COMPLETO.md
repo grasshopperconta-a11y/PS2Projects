@@ -238,3 +238,128 @@ Antes de executar a Fase 1, duas decisões que são suas, não minhas:
    para testar. A Fase 1 (VRAM) é o que bloqueia o jogo inteiro. Se o objetivo
    é o jogo completo, a Fase 1 primeiro evita retrabalho; se é fazer o que
    existe hoje funcionar no console, a Fase 0 primeiro.
+
+---
+
+## 7. O modelo de carregar/descarregar (adendo)
+
+Você perguntou se não íamos carregar o jogo inteiro de uma vez, mas ir
+carregando e descarregando ao entrar nas fases. **A resposta é sim — e a
+medição mostra exatamente onde o port quebra esse modelo hoje.**
+
+### 7.1 Onde o port já faz certo
+
+`tutorial_packs_free()` dá `free()` de verdade nos packs do tutorial, que são
+`malloc`'ados do pendrive ao entrar e liberados ao sair. O áudio usa o anel de
+256 KB com leituras de 32 KB, streamado. Ou seja, **o caminho de streaming já
+existe e funciona**.
+
+### 7.2 Onde o port quebra o modelo — dois pontos medidos
+
+**Ponto 1: a VRAM é alocada uma vez e nunca liberada.**
+
+As 6 chamadas de `graph_vram_allocate` estão **todas** na inicialização
+(linhas 1346-1352 de `main.c`), e **não existe `graph_vram_free` em lugar
+nenhum** do código:
+
+```
+1346: fb[0] ... graph_vram_allocate(SCREEN_W,SCREEN_H,GS_PSM_32,GRAPH_ALIGN_PAGE)
+1348: tex   ... graph_vram_allocate(320,256,GS_PSM_32,GRAPH_ALIGN_BLOCK)
+1349: tex2  ... graph_vram_allocate(320,256,GS_PSM_32,GRAPH_ALIGN_BLOCK)
+1350: gftex ... graph_vram_allocate(256,256,GS_PSM_32,GRAPH_ALIGN_BLOCK)
+1351: stagetex ... graph_vram_allocate(512,256,GS_PSM_32,GRAPH_ALIGN_BLOCK)
+1352: fonttex  ... graph_vram_allocate(384,256,GS_PSM_32,GRAPH_ALIGN_BLOCK)
+```
+
+Nada disso sai. Os 8 buffers somam 4.169.728 dos 4.194.304 B do GS — 99,4% — e
+o próprio código comenta *"VRAM livre apos o fonttex: 163.840 B"*. Sobram
+160 KB, e não há mecanismo para devolver espaço.
+
+**Ponto 2: 2,93 MB de packs linkados dentro da ELF.**
+
+`src/title_packs.S` e `src/story_packs.S` usam `.incbin`, que copia os arquivos
+para `.rodata`:
+
+| Pack | Bytes | Usado em |
+|---|---|---|
+| `title_gfDanceTitle.lz4f` | 1.549.455 | só no título |
+| `title_logoBumpin.lz4f` | 658.996 | só no título |
+| `story_gf_idle.lz4f` | 483.303 | só no story |
+| `story_bf_idle.lz4f` | 238.038 | só no story |
+| **TOTAL** | **2.929.792** | 2 dos 4 estados |
+
+Esses 2,93 MB ficam na RAM **o tempo todo**, esteja você no título, no menu, no
+story ou no tutorial. É o único lugar onde o "carregar tudo" acontece de fato, e
+é a primeira coisa a consertar.
+
+### 7.3 O orçamento, medido
+
+| Categoria | Bytes | % da RDRAM (32 MB) |
+|---|---|---|
+| Permanente (`menu_cache.rle`, sfx, cache do menu, packs na ELF) | 7.760.289 | 23,1% |
+| Scratch (buffers de decode, sempre alocados) | 13.652.092 | 40,7% |
+| Streaming (áudio + packs, por estado) | 5.841.006 | 17,4% |
+| **Se tudo carregado** | **27.253.387** | **81,2%** |
+| Piso permanente + scratch | 21.412.381 | sobra **11,58 MB** |
+
+**A conclusão que inverte a prioridade da seção 3:** a RDRAM **não** é o
+gargalo. Mesmo carregando tudo, são 81% de 32 MB, e o piso fixo deixa 11,58 MB
+livres. O gargalo é a **VRAM**, com 160 KB.
+
+Isso quer dizer que a resolução menor **não é exigência do carregamento** — é
+exigência do que precisa estar desenhável ao mesmo tempo (personagem, stage,
+notas, HUD). E que a primeira medida de arquitetura não é mexer em resolução:
+é **parar de linkar 2,93 MB na ELF** e passar a carregá-los do pendrive por
+estado, que é o que você propôs.
+
+### 7.4 A arquitetura que segue daí
+
+```
+boot:      aloca os buffers de VRAM UMA vez (framebuffers, tex, tex2, gftex,
+           stagetex, fonttex) -- esses são os "slots" fixos
+por estado: carrega do pendrive os packs daquele estado para a RAM,
+           faz upload nos slots de VRAM que o estado precisa,
+           e ao sair dá free() na RAM e marca o slot como livre
+```
+
+Três consequências práticas:
+
+1. **Um gerenciador de slots de VRAM** — quais dos 6 slots estão em uso, por
+   quem, e quando podem ser reutilizados. Hoje isso é implícito e
+   hardcoded por estado.
+2. **Fim do `.incbin`** para os 4 packs de título/story: passam a vir do
+   pendrive, como já acontece com os do tutorial.
+3. **Um pack por vez na VRAM** — personagem, stage e notas dividem os slots,
+   com upload sob demanda. É o que permite 46 personagens e 21 stages sem
+   estourar 4 MB.
+
+### 7.5 Plano revisto
+
+| Fase | Item | Portão de saída |
+|---|---|---|
+| 0 | Travamento no console | `BOOT.txt` dizendo onde parou, além de `passo 66: FRAME` |
+| 1 | **Tirar os 4 packs do `.incbin`**, carregar do pendrive por estado | harness passa; ELF encolhe ~2,93 MB; `check_real_assets.py` valida |
+| 2 | **Gerenciador de slots de VRAM** (alocar/ocupar/liberar) | teste de unidade no host: alocar todos os slots, liberar, realocar |
+| 3 | Pack genérico de personagem e stage | carregar personagem e stage que **não** sejam os do tutorial |
+| 4 | Estado de gameplay genérico (estado 9) | jogar `bopeebo-hard` do início ao fim no harness |
+| 5 | Sistemas: scoring, health, miss, combo, accuracy, judgement, rating, results | chart conhecido + entrada scriptada = pontuação conferível no PC |
+| 6 | Song select, pausa, resultados, transições | atravessar título → semana → música → results no harness |
+
+A Fase 1 vem antes da resolução porque é a que implementa o modelo que você
+descreveu, é medida (2,93 MB), e não tem risco de regressão visual — os packs
+continuam os mesmos, só mudam de onde vêm.
+
+### 7.6 Ressalva importante sobre o workspace
+
+Entre turnos, o workspace foi restaurado e **perdeu dois diretórios
+gitignored**: `google_drive/` (com o tarball do toolchain, 42 MB) e os assets
+de runtime. Consequência medida agora:
+
+- `sh test/rodar-prova.sh` → **funciona** (249 checagens, 0 falhas)
+- `sh tools/run_harness.sh` → **funciona** com assets sintéticos, que ele mesmo gera
+- **build para PS2 → não funciona**, por falta do toolchain
+
+O trabalho não foi perdido: os 12 commits estão no remoto, e o reset local para
+`origin/arena/4c50659b-ps2projects` restaurou tudo. Para voltar a buildar para
+PS2 é preciso reobter `PS2DEV_EE_MIN_FNF.tar.xz` em `google_drive/` (o
+`assets-manifest.json` documenta a pasta e os ids de onde vêm os assets).
